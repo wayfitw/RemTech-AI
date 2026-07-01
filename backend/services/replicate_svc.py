@@ -6,9 +6,10 @@ import base64
 import httpx
 import replicate
 
-from config import REPLICATE_API_TOKEN
+from app.config import get_settings
 
-_client = replicate.Client(api_token=REPLICATE_API_TOKEN) if REPLICATE_API_TOKEN else None
+_token = get_settings().replicate_api_token
+_client = replicate.Client(api_token=_token) if _token else None
 
 
 def _read_output(output) -> bytes | None:

@@ -5,8 +5,15 @@
 import io
 import os
 import re
+import sys
 
-from config import PDF_FONT_PATH
+from app.config import get_settings
+
+# TTF с кириллицей для PDF: из конфига, иначе системный дефолт по ОС.
+PDF_FONT_PATH = get_settings().pdf_font_path or (
+    "C:/Windows/Fonts/arial.ttf" if sys.platform == "win32"
+    else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+)
 
 
 def create_docx(content: str, filename: str = "document") -> bytes:
