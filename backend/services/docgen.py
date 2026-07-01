@@ -18,10 +18,10 @@ PDF_FONT_PATH = get_settings().pdf_font_path or (
 
 def create_docx(content: str, filename: str = "document") -> bytes:
     from docx import Document
-    from docx.shared import Pt, Cm, RGBColor
     from docx.enum.text import WD_ALIGN_PARAGRAPH
-    from docx.oxml.ns import qn
     from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    from docx.shared import Cm, Pt, RGBColor
 
     GRAPHITE = RGBColor(0x26, 0x28, 0x2F)
 
@@ -265,11 +265,11 @@ def _register_pdf_font() -> str:
 
 
 def create_pdf(content: str, filename: str = "document") -> bytes:
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.units import cm
     from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import cm
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
     font = _register_pdf_font()
     styles = getSampleStyleSheet()

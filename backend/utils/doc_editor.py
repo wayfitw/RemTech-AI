@@ -42,8 +42,8 @@ def apply_doc_edits(file_bytes: bytes, operations: list[dict], filename: str = "
 
 def _read_with_docx_editor(file_bytes: bytes) -> str:
     from docx import Document as PD
-    from docx_editor import Document as DE
     from docx.oxml.ns import qn
+    from docx_editor import Document as DE
 
     # Use python-docx to find which w:p elements are inside tables
     pd_doc = PD(io.BytesIO(file_bytes))
@@ -87,7 +87,7 @@ def _read_with_docx_editor(file_bytes: bytes) -> str:
 
     lines = [
         f"Документ: {len(refs)} параграфов всего, {len(top_level)} верхнеуровневых, {table_count} таблиц.",
-        f"Показаны только верхнеуровневые параграфы — таблицы сохраняются автоматически при редактировании.",
+        "Показаны только верхнеуровневые параграфы — таблицы сохраняются автоматически при редактировании.",
         ""
     ]
     lines += top_level
@@ -100,6 +100,7 @@ def _apply_with_docx_editor(file_bytes: bytes, operations: list[dict], filename:
     apply all changes via python-docx (rewrite/delete/insert).
     """
     import copy
+
     from docx import Document as PD
     from docx_editor import Document as DE
     from lxml import etree
@@ -361,8 +362,9 @@ def _apply_fallback(file_bytes: bytes, operations: list[dict], filename: str) ->
                     errors.append(f"❌ {ref} не найден")
                     continue
                 import copy
-                from lxml import etree
+
                 from docx.oxml.ns import qn
+                from lxml import etree
                 text = op.get("text", "")
                 anchor = doc.paragraphs[idx]._element
                 new_p = copy.deepcopy(anchor)

@@ -29,7 +29,7 @@ async def test_registration_bootstrap_then_closed(client):
 
 
 async def test_login_and_conversations(client):
-    token = await _register_admin(client)
+    await _register_admin(client)
     r = await client.post("/api/login", json={"username": "director", "password": "1234"})
     assert r.status_code == 200
     t = r.json()["token"]

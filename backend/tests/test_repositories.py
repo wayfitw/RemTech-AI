@@ -60,7 +60,7 @@ async def test_files_and_ownership(session):
 
 
 async def test_admin_analytics(session):
-    admin = await repo.create_user(session, "director", "h$1", role="admin", full_name="Директор")
+    await repo.create_user(session, "director", "h$1", role="admin", full_name="Директор")
     emp = await repo.create_user(session, "worker", "h$1", full_name="Работник")
     conv = await repo.create_conversation(session, emp.id, "чат")
     await repo.save_message(session, conv.id, emp.id, "user", "вопрос")

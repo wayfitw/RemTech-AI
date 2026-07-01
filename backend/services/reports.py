@@ -37,7 +37,7 @@ def _msg_text(content) -> str:
 
 def build_xlsx(data: dict) -> bytes:
     from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
     d = data
     wb = Workbook()
@@ -153,10 +153,9 @@ def build_xlsx(data: dict) -> bytes:
 
 def build_docx(data: dict) -> bytes:
     from docx import Document
-    from docx.shared import Pt, RGBColor, Cm
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
-    from docx.oxml.ns import qn
     from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    from docx.shared import Cm, Pt, RGBColor
 
     d = data
     navy = RGBColor(0x1A, 0x1A, 0x1A)
@@ -265,10 +264,9 @@ def build_user_docx(user: dict, convs: list) -> bytes:
     """user: {full_name, username, role}; convs: [{title, updated_at, count,
     items: [{role, content}]}]."""
     from docx import Document
-    from docx.shared import Pt, RGBColor, Cm
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
-    from docx.oxml.ns import qn
     from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    from docx.shared import Pt, RGBColor
 
     navy = RGBColor(0x1A, 0x1A, 0x1A)   # заголовки (чёрный)
     blue = RGBColor(0x1A, 0x1A, 0x1A)   # метка «Сотрудник» (чёрный)

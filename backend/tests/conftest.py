@@ -7,8 +7,8 @@ import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.config import get_settings
 import app.models  # noqa: F401 — регистрируем модели в Base.metadata
+from app.config import get_settings
 from app.database import Base
 
 _base_url = get_settings().database_url

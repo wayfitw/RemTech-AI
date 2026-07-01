@@ -9,13 +9,12 @@ from sqlalchemy import delete, func, select, update
 
 from app.models import (
     ActivityLog,
-    Conversation,
     ChatHistory,
+    Conversation,
     ModelConfig,  # noqa: F401 — используется агентами позже
     UploadedFile,
     User,
 )
-
 
 # ── Users ──────────────────────────────────────────────────────────────────────
 

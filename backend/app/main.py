@@ -5,8 +5,14 @@ REST: авторизация, чаты, файлы, админка. WebSocket-ч
 import json
 
 from fastapi import (
-    Depends, FastAPI, File, Form, HTTPException, UploadFile,
-    WebSocket, WebSocketDisconnect,
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
@@ -14,9 +20,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import auth
+from app import auth, storage
 from app import repositories as repo
-from app import storage
 from app.config import get_settings
 from app.database import SessionLocal, get_db, init_extensions
 from app.orchestrator import orchestrator
