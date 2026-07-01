@@ -44,7 +44,8 @@ class Settings(BaseSettings):
     tei_url: str = ""                # эмбеддинги/реранкер (bge-m3) на GPU
     embed_dim: int = 1024
 
-    # ── документы ──────────────────────────────────────────────────────────────
+    # ── файлы / документы ──────────────────────────────────────────────────────
+    files_dir: str = "data/files"
     pdf_font_path: str = ""
     logo_path: str = ""
 

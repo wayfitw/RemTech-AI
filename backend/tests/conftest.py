@@ -47,3 +47,34 @@ async def session():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
     await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def client():
+    """httpx-клиент против ASGI-приложения с изолированной тестовой БД."""
+    import httpx
+    from httpx import ASGITransport
+
+    from app.database import get_db
+    from app.main import app
+
+    await _ensure_test_database()
+    engine = create_async_engine(_TEST_URL, pool_pre_ping=True)
+    async with engine.begin() as conn:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        await conn.run_sync(Base.metadata.drop_all)
+        await conn.run_sync(Base.metadata.create_all)
+    TestSession = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def _override_get_db():
+        async with TestSession() as s:
+            yield s
+
+    app.dependency_overrides[get_db] = _override_get_db
+    transport = ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+        yield c
+    app.dependency_overrides.clear()
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+    await engine.dispose()
