@@ -8,18 +8,16 @@ import base64
 from datetime import datetime
 from typing import Awaitable, Callable
 
-import anthropic
-
 from agent.tools import TOOLS
 from app import repositories as repo
 from app import storage
 from app.config import get_settings
 from app.database import SessionLocal
+from app.llm import gateway
 from services import docgen, replicate_svc, websearch
 
 Emit = Callable[[dict], Awaitable[None]]
 settings = get_settings()
-client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key or "missing")
 
 SYSTEM_PROMPT = """Ты корпоративный ИИ-ассистент компании «Ремтехника» (продажа спецтехники XCMG и запчастей). Отвечаешь на русском языке.
 
@@ -207,15 +205,14 @@ class Orchestrator:
 
     async def _stream_once(self, system, tools, history, emit):
         last_err = None
+
+        async def on_delta(chunk):
+            await emit({"type": "delta", "text": chunk})
+
         for attempt in range(4):
             try:
-                async with client.messages.stream(
-                    model=settings.model, max_tokens=settings.max_tokens,
-                    system=system, tools=tools, messages=history, timeout=120.0,
-                ) as stream:
-                    async for chunk in stream.text_stream:
-                        await emit({"type": "delta", "text": chunk})
-                    return await stream.get_final_message()
+                # alias=None → модель по умолчанию из шлюза (позже — модель агента)
+                return await gateway.run(None, system, tools, history, on_delta)
             except Exception as e:
                 last_err = e
                 err = str(e).lower()

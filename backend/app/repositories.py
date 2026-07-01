@@ -9,9 +9,10 @@ from sqlalchemy import delete, func, select, update
 
 from app.models import (
     ActivityLog,
+    Agent,
     ChatHistory,
     Conversation,
-    ModelConfig,  # noqa: F401 — используется агентами позже
+    ModelConfig,
     UploadedFile,
     User,
 )
@@ -224,6 +225,52 @@ async def activity_log_list(s, limit: int = 200, user_id: int | None = None) -> 
     return [{"id": a.id, "user_id": a.user_id, "username": uname, "full_name": fname,
              "action": a.action, "detail": a.detail, "created_at": _iso(a.created_at)}
             for a, uname, fname in rows]
+
+
+# ── Model configs (шлюз моделей) ───────────────────────────────────────────────
+
+async def create_model_config(s, alias: str, provider: str, endpoint: str = "",
+                              fallback_to: str | None = None) -> ModelConfig:
+    mc = ModelConfig(alias=alias, provider=provider, endpoint=endpoint or None,
+                     fallback_to=fallback_to)
+    s.add(mc)
+    await s.flush()
+    return mc
+
+
+async def get_model_config_by_alias(s, alias: str) -> ModelConfig | None:
+    return await s.scalar(select(ModelConfig).where(ModelConfig.alias == alias))
+
+
+async def list_model_configs(s) -> list[ModelConfig]:
+    return list(await s.scalars(select(ModelConfig).order_by(ModelConfig.id)))
+
+
+async def delete_model_config(s, mc_id: int) -> None:
+    await s.execute(delete(ModelConfig).where(ModelConfig.id == mc_id))
+
+
+# ── Agents (конструктор агентов) ────────────────────────────────────────────────
+
+async def create_agent(s, name: str, system_prompt: str = "", tools: list | None = None,
+                       default_model: int | None = None, allowed_roles: str = "") -> Agent:
+    agent = Agent(name=name, system_prompt=system_prompt or None, tools=tools,
+                  default_model=default_model, allowed_roles=allowed_roles or None)
+    s.add(agent)
+    await s.flush()
+    return agent
+
+
+async def get_agent(s, agent_id: int) -> Agent | None:
+    return await s.get(Agent, agent_id)
+
+
+async def list_agents(s) -> list[Agent]:
+    return list(await s.scalars(select(Agent).order_by(Agent.id)))
+
+
+async def delete_agent(s, agent_id: int) -> None:
+    await s.execute(delete(Agent).where(Agent.id == agent_id))
 
 
 def _iso(value) -> str | None:
