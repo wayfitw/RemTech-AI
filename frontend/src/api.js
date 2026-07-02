@@ -54,6 +54,10 @@ export const api = {
   exportDocx: () => downloadAuthed("/admin/export/docx", "Отчёт_Ремтехника.docx"),
   exportUserDocx: (uid, name) =>
     downloadAuthed(`/admin/users/${uid}/export/docx`, `Переписка_${name}.docx`),
+  adminModels: () => req("/admin/models"),
+  adminAgents: () => req("/admin/agents"),
+  adminCreateAgent: (data) => req("/admin/agents", { method: "POST", json: data }),
+  adminDeleteAgent: (id) => req(`/admin/agents/${id}`, { method: "DELETE" }),
   adminKbList: () => req("/admin/kb"),
   adminKbDelete: (id) => req(`/admin/kb/${id}`, { method: "DELETE" }),
   adminKbUpload: async (file, ownerRole) => {

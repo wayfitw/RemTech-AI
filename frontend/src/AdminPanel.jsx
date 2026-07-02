@@ -72,6 +72,7 @@ export default function AdminPanel() {
         {[["stats", "ti-chart-bar", "Статистика"],
           ["users", "ti-users", "Сотрудники"],
           ["kb", "ti-database", "База знаний"],
+          ["agents", "ti-robot", "Агенты"],
           ["logs", "ti-history", "Журнал"]].map(([id, icon, label]) => (
           <button
             key={id}
@@ -109,6 +110,8 @@ export default function AdminPanel() {
         )}
 
         {tab === "kb" && <KnowledgeBase />}
+
+        {tab === "agents" && <Agents />}
 
         {tab === "logs" && <Logs rows={activity} />}
       </div>
@@ -444,6 +447,130 @@ function ConvView({ view, onBack }) {
         ))}
         {view.messages.length === 0 && <div className="admin-empty">Чат пуст</div>}
       </div>
+    </div>
+  );
+}
+
+const TOOL_OPTIONS = [
+  ["search_knowledge_base", "База знаний"],
+  ["create_proposal", "Генератор КП"],
+  ["create_docx", "Создать Word"],
+  ["create_pdf", "Создать PDF"],
+  ["read_doc", "Читать документ"],
+  ["apply_doc_edits", "Редактировать документ"],
+  ["generate_image", "Генерация картинок"],
+  ["generate_video", "Генерация видео"],
+  ["read_url", "Читать страницу"],
+  ["web_search", "Веб-поиск"],
+];
+
+function Agents() {
+  const [agents, setAgents] = useState([]);
+  const [models, setModels] = useState([]);
+  const [adding, setAdding] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const empty = { name: "", system_prompt: "", tools: [], default_model: "", allowed_roles: [] };
+  const [form, setForm] = useState(empty);
+
+  function load() { api.adminAgents().then(setAgents).catch((e) => toast.error(e.message)); }
+  useEffect(() => { load(); api.adminModels().then(setModels).catch(() => {}); }, []);
+
+  const toggle = (list, v) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
+  const modelName = (id) => models.find((m) => m.id === id)?.alias || "по умолчанию";
+
+  async function create(e) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      await api.adminCreateAgent({
+        name: form.name, system_prompt: form.system_prompt, tools: form.tools,
+        default_model: form.default_model ? Number(form.default_model) : null,
+        allowed_roles: form.allowed_roles.join(","),
+      });
+      toast.success("Агент создан");
+      setForm(empty); setAdding(false); load();
+    } catch (err) { toast.error(err.message); } finally { setBusy(false); }
+  }
+
+  async function remove(a) {
+    if (!window.confirm(`Удалить агента «${a.name}»?`)) return;
+    try {
+      await api.adminDeleteAgent(a.id);
+      setAgents((x) => x.filter((y) => y.id !== a.id));
+      toast.success("Агент удалён");
+    } catch (e) { toast.error(e.message); }
+  }
+
+  return (
+    <div>
+      <div className="users-toolbar">
+        <button className="add-user-btn" onClick={() => setAdding((a) => !a)}>
+          <i className="ti ti-plus" />Новый агент
+        </button>
+      </div>
+      {adding && (
+        <form className="agent-form" onSubmit={create}>
+          <input placeholder="Название (напр. «Продажник»)" value={form.name}
+                 onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          <textarea placeholder="Системный промпт: кто это, как отвечает, какие правила…"
+                    rows={3} value={form.system_prompt}
+                    onChange={(e) => setForm({ ...form, system_prompt: e.target.value })} />
+          <div className="agent-fld">
+            <span>Инструменты (пусто = все):</span>
+            <div className="chk-grid">
+              {TOOL_OPTIONS.map(([id, label]) => (
+                <label key={id}>
+                  <input type="checkbox" checked={form.tools.includes(id)}
+                         onChange={() => setForm({ ...form, tools: toggle(form.tools, id) })} /> {label}
+                </label>
+              ))}
+            </div>
+          </div>
+          <div className="agent-fld-row">
+            <label className="agent-inline">Модель:
+              <select value={form.default_model}
+                      onChange={(e) => setForm({ ...form, default_model: e.target.value })}>
+                <option value="">по умолчанию</option>
+                {models.map((m) => <option key={m.id} value={m.id}>{m.alias} ({m.provider})</option>)}
+              </select>
+            </label>
+            <div className="agent-fld inline">
+              <span>Доступ:</span>
+              {[["user", "Сотрудники"], ["admin", "Админ"]].map(([r, l]) => (
+                <label key={r}>
+                  <input type="checkbox" checked={form.allowed_roles.includes(r)}
+                         onChange={() => setForm({ ...form, allowed_roles: toggle(form.allowed_roles, r) })} /> {l}
+                </label>
+              ))}
+            </div>
+          </div>
+          <button disabled={busy || !form.name}>{busy ? "…" : "Создать агента"}</button>
+        </form>
+      )}
+      {agents.length === 0 ? (
+        <div className="admin-empty">Агентов пока нет — создайте первого (это «модуль»).</div>
+      ) : (
+        <div className="table-wrap">
+          <table className="admin-table">
+            <thead><tr><th>Агент</th><th>Модель</th><th>Инструментов</th><th>Доступ</th><th></th></tr></thead>
+            <tbody>
+              {agents.map((a) => (
+                <tr key={a.id}>
+                  <td><div className="cell-user"><i className="ti ti-robot" style={{ fontSize: 18 }} /> {a.name}</div></td>
+                  <td>{modelName(a.default_model)}</td>
+                  <td>{(a.tools || []).length || "все"}</td>
+                  <td>{a.allowed_roles || "все"}</td>
+                  <td className="row-actions">
+                    <button className="icon-act" title="Удалить" onClick={() => remove(a)}>
+                      <i className="ti ti-trash" />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

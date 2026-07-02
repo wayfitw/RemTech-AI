@@ -244,6 +244,32 @@ h1, h2, h3, .brand-name { letter-spacing: -0.02em; }
   padding: 9px 16px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit;
 }
 .add-user-form button:disabled { opacity: 0.5; cursor: default; }
+/* ── Конструктор агентов ────────────────────────────── */
+.agent-form {
+  display: flex; flex-direction: column; gap: 12px; margin-bottom: 18px;
+  padding: 16px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+}
+.agent-form input, .agent-form textarea, .agent-form select {
+  background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+  border-radius: 9px; padding: 10px 12px; font-size: 14px; font-family: inherit; outline: none;
+}
+.agent-form input:focus, .agent-form textarea:focus, .agent-form select:focus { border-color: var(--accent); }
+.agent-form > button {
+  align-self: flex-start; background: var(--accent); color: var(--on-accent); border: none;
+  border-radius: 9px; padding: 10px 18px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit;
+}
+.agent-form > button:disabled { opacity: 0.5; cursor: default; }
+.agent-fld { font-size: 13px; color: var(--muted); }
+.agent-fld > span { display: block; margin-bottom: 6px; }
+.agent-fld.inline { display: flex; align-items: center; gap: 12px; }
+.agent-fld.inline > span { margin: 0; }
+.chk-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 6px 14px; }
+.chk-grid label, .agent-fld.inline label, .agent-inline {
+  display: inline-flex; align-items: center; gap: 6px; color: var(--text); font-size: 13.5px; cursor: pointer;
+}
+.agent-fld-row { display: flex; gap: 24px; flex-wrap: wrap; align-items: center; }
+.agent-inline select { margin-left: 8px; }
+.chk-grid input, .agent-fld.inline input { accent-color: var(--accent); }
 .row-actions { display: flex; align-items: center; gap: 8px; }
 .icon-act {
   display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
