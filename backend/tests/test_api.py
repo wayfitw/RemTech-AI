@@ -202,6 +202,26 @@ async def test_admin_conversation_views(client):
     assert (await client.get(f"/api/admin/conversations/{cid}/messages", headers=_auth(anna))).status_code == 403
 
 
+async def test_agents_visible_by_role(client):
+    admin = await _register_admin(client)
+    await client.post("/api/admin/agents", headers=_auth(admin),
+                      json={"name": "Продажник", "allowed_roles": "user,admin"})
+    await client.post("/api/admin/agents", headers=_auth(admin),
+                      json={"name": "Аналитик", "allowed_roles": "admin"})
+    await client.post("/api/admin/agents", headers=_auth(admin),
+                      json={"name": "Общий", "allowed_roles": ""})
+
+    await client.post("/api/admin/users", headers=_auth(admin),
+                      json={"username": "anna", "password": "1234", "role": "user"})
+    anna = (await client.post("/api/login", json={"username": "anna", "password": "1234"})).json()["token"]
+
+    user_names = {a["name"] for a in (await client.get("/api/agents", headers=_auth(anna))).json()}
+    assert user_names == {"Продажник", "Общий"}  # без «Аналитик» (только admin)
+
+    admin_names = {a["name"] for a in (await client.get("/api/agents", headers=_auth(admin))).json()}
+    assert admin_names == {"Продажник", "Аналитик", "Общий"}
+
+
 async def test_kb_admin_endpoints(client):
     from app.embeddings import FakeEmbedder
     from app.main import app, embedder_dep

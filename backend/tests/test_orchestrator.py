@@ -148,3 +148,40 @@ async def test_create_proposal_tool(session, monkeypatch):
     rec = await repo.get_file_record(session, docs[0]["file_id"])
     assert rec is not None and rec.kind == "docx" and rec.direction == "output"
     await engine.dispose()
+
+
+class _RecGateway:
+    def __init__(self):
+        self.calls = []
+
+    async def run(self, alias, system, tools, messages, on_delta):
+        self.calls.append({"alias": alias, "tools": [t.get("name") for t in tools],
+                           "system_text": system[0]["text"]})
+        return _Final("ок")
+
+
+async def test_process_uses_agent_config(session, monkeypatch):
+    """С agent_id оркестратор берёт промпт, набор инструментов и модель агента."""
+    user = await repo.create_user(session, "u", "h$1")
+    conv = await repo.create_conversation(session, user.id, "Новый чат")
+    mc = await repo.create_model_config(session, "claude", "anthropic", "claude-sonnet-4-6")
+    agent = await repo.create_agent(session, "Продажник", "Ты менеджер по продажам XCMG",
+                                    ["search_knowledge_base", "create_proposal"], mc.id, "user")
+    await session.commit()
+
+    base = get_settings().database_url
+    test_url = base.rsplit("/", 1)[0] + "/remtech_test"
+    engine = create_async_engine(test_url)
+    monkeypatch.setattr(orch, "SessionLocal", async_sessionmaker(engine, expire_on_commit=False))
+    gw = _RecGateway()
+    monkeypatch.setattr(orch, "gateway", gw)
+
+    async def emit(e):
+        pass
+
+    await orch.Orchestrator().process(conv.id, user.id, "сделай КП", [], emit, ["user"], agent.id)
+    call = gw.calls[0]
+    assert call["alias"] == "claude"  # модель агента
+    assert set(call["tools"]) == {"search_knowledge_base", "create_proposal"}  # только его инструменты
+    assert "менеджер по продажам" in call["system_text"]  # его промпт
+    await engine.dispose()

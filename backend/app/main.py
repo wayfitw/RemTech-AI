@@ -161,6 +161,18 @@ async def api_me(user: dict = Depends(current_user)):
     return user
 
 
+@app.get("/api/agents")
+async def api_agents(user: dict = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    """Агенты (модули), доступные пользователю по его роли."""
+    role = user.get("role", "user")
+    out = []
+    for a in await repo.list_agents(db):
+        allowed = (a.allowed_roles or "").replace(" ", "")
+        if role == "admin" or not allowed or role in allowed.split(","):
+            out.append({"id": a.id, "name": a.name})
+    return out
+
+
 # ── conversations ──────────────────────────────────────────────────────────────
 
 def _conv_dict(c):
@@ -475,6 +487,7 @@ async def ws_chat(ws: WebSocket):
             text = msg.get("text", "")
             conversation_id = msg.get("conversation_id")
             file_ids = msg.get("file_ids", [])
+            agent_id = msg.get("agent_id")
 
             async with SessionLocal() as s:
                 if not conversation_id:
@@ -504,7 +517,7 @@ async def ws_chat(ws: WebSocket):
 
             # админ видит всю базу знаний (roles=None), сотрудник — по своей роли
             roles = None if user.get("role") == "admin" else [user.get("role", "user")]
-            await orchestrator.process(conversation_id, uid, text, attachments, emit, roles)
+            await orchestrator.process(conversation_id, uid, text, attachments, emit, roles, agent_id)
     except WebSocketDisconnect:
         return
     except Exception as e:

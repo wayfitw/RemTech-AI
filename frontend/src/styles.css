@@ -593,6 +593,13 @@ h1, h2, h3, .brand-name { letter-spacing: -0.02em; }
 
 /* ── Composer ──────────────────────────────────────── */
 .composer { border-top: 1px solid var(--border); padding: 14px 18px; background: var(--panel); }
+.agent-pick { display: flex; align-items: center; gap: 8px; margin: 0 auto 10px; max-width: 860px; color: var(--muted); font-size: 13px; }
+.agent-pick i { font-size: 17px; }
+.agent-pick select {
+  background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+  border-radius: 8px; padding: 6px 10px; font-size: 13px; font-family: inherit; outline: none;
+}
+.agent-pick select:focus { border-color: var(--accent); }
 .pending { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 auto 10px; max-width: 860px; }
 .composer-row { display: flex; align-items: center; gap: 11px; max-width: 860px; margin: 0 auto; }
 .attach {

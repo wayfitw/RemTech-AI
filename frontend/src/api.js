@@ -35,6 +35,7 @@ export const api = {
   register: (username, password, full_name) =>
     req("/register", { method: "POST", json: { username, password, full_name } }),
   me: () => req("/me"),
+  agents: () => req("/agents"),
   adminCreateUser: (username, password, full_name, role) =>
     req("/admin/users", { method: "POST", json: { username, password, full_name, role } }),
   adminResetPassword: (uid, password) =>

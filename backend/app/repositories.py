@@ -240,6 +240,10 @@ async def create_model_config(s, alias: str, provider: str, endpoint: str = "",
     return mc
 
 
+async def get_model_config(s, mc_id: int) -> ModelConfig | None:
+    return await s.get(ModelConfig, mc_id)
+
+
 async def get_model_config_by_alias(s, alias: str) -> ModelConfig | None:
     return await s.scalar(select(ModelConfig).where(ModelConfig.alias == alias))
 

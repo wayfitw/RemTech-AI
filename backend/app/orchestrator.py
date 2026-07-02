@@ -114,11 +114,11 @@ class Orchestrator:
         self._locks: dict[int, asyncio.Lock] = {}
 
     async def process(self, conversation_id, user_id, text, attachments, emit: Emit,
-                      roles=None):
+                      roles=None, agent_id=None):
         lock = self._locks.setdefault(conversation_id, asyncio.Lock())
         async with lock:
             try:
-                await self._run(conversation_id, user_id, text, attachments, emit, roles)
+                await self._run(conversation_id, user_id, text, attachments, emit, roles, agent_id)
             except Exception as e:
                 await emit({"type": "error", "text": f"Ошибка: {e}"})
 
@@ -149,7 +149,21 @@ class Orchestrator:
             return parts
         return body
 
-    async def _run(self, cid, uid, text, attachments, emit, roles=None):
+    async def _agent_config(self, agent_id):
+        """Возвращает (system_prompt, tool_names|None, model_alias|None) агента."""
+        if not agent_id:
+            return None, None, None
+        async with SessionLocal() as s:
+            agent = await repo.get_agent(s, agent_id)
+            if not agent:
+                return None, None, None
+            alias = None
+            if agent.default_model:
+                mc = await repo.get_model_config(s, agent.default_model)
+                alias = mc.alias if mc else None
+            return agent.system_prompt, (agent.tools or None), alias
+
+    async def _run(self, cid, uid, text, attachments, emit, roles=None, agent_id=None):
         history = await self._load_history(cid)
         user_content = self._build_user_content(cid, text, attachments)
         history.append({"role": "user", "content": user_content})
@@ -164,11 +178,14 @@ class Orchestrator:
 
         history[:] = _sanitize_history(history)
 
+        # Конфигурация агента (модуля): промпт, набор инструментов, модель
+        sys_prompt, tool_names, model_alias = await self._agent_config(agent_id)
         system = [
-            {"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}},
+            {"type": "text", "text": sys_prompt or SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}},
             {"type": "text", "text": f"Сейчас: {datetime.now().strftime('%d.%m.%Y %H:%M, %A')}"},
         ]
-        cached_tools = list(TOOLS)
+        tools = TOOLS if tool_names is None else [t for t in TOOLS if t.get("name") in tool_names]
+        cached_tools = list(tools)
         if cached_tools:
             last = dict(cached_tools[-1]); last["cache_control"] = {"type": "ephemeral"}
             cached_tools[-1] = last
@@ -177,7 +194,7 @@ class Orchestrator:
 
         final_text = ""
         while True:
-            response = await self._stream_once(system, cached_tools, history, emit)
+            response = await self._stream_once(system, cached_tools, history, emit, model_alias)
             history.append({"role": "assistant", "content": _safe_content(response.content)})
 
             if response.stop_reason == "tool_use":
@@ -205,7 +222,7 @@ class Orchestrator:
             await s.commit()
         await emit({"type": "done", "text": final_text})
 
-    async def _stream_once(self, system, tools, history, emit):
+    async def _stream_once(self, system, tools, history, emit, model_alias=None):
         last_err = None
 
         async def on_delta(chunk):
@@ -213,8 +230,7 @@ class Orchestrator:
 
         for attempt in range(4):
             try:
-                # alias=None → модель по умолчанию из шлюза (позже — модель агента)
-                return await gateway.run(None, system, tools, history, on_delta)
+                return await gateway.run(model_alias, system, tools, history, on_delta)
             except Exception as e:
                 last_err = e
                 err = str(e).lower()

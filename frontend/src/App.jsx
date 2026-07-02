@@ -210,6 +210,8 @@ function Chat({ onLogout, theme, onToggleTheme }) {
   const [busy, setBusy] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [me, setMe] = useState(null);
+  const [agents, setAgents] = useState([]);
+  const [agentId, setAgentId] = useState("");
   const [view, setView] = useState("chat"); // chat | admin
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -235,6 +237,7 @@ function Chat({ onLogout, theme, onToggleTheme }) {
   useEffect(() => {
     api.conversations().then(setConversations).catch(() => {});
     api.me().then(setMe).catch(() => {});
+    api.agents().then(setAgents).catch(() => {});
   }, []);
 
   // WebSocket
@@ -362,6 +365,7 @@ function Chat({ onLogout, theme, onToggleTheme }) {
         conversation_id: activeId,
         text,
         file_ids: pending.map((p) => p.file_id),
+        agent_id: agentId ? Number(agentId) : null,
       })
     );
     setInput("");
@@ -513,6 +517,17 @@ function Chat({ onLogout, theme, onToggleTheme }) {
         </div>
 
         <div className="composer">
+          {agents.length > 0 && (
+            <div className="agent-pick">
+              <i className="ti ti-robot" />
+              <select value={agentId} onChange={(e) => setAgentId(e.target.value)}>
+                <option value="">Ассистент (по умолчанию)</option>
+                {agents.map((a) => (
+                  <option key={a.id} value={a.id}>{a.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
           {pending.length > 0 && (
             <div className="pending">
               {pending.map((p, i) => (
