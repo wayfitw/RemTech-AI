@@ -47,6 +47,14 @@ _bearer = HTTPBearer(auto_error=False)
 @app.on_event("startup")
 async def _startup():
     await init_extensions()
+    # Сид дефолтной модели для шлюза, если реестр пуст.
+    async with SessionLocal() as s:
+        if not await repo.get_model_config_by_alias(s, settings.default_model):
+            await repo.create_model_config(
+                s, settings.default_model, "anthropic",
+                settings.model, settings.fallback_model,
+            )
+            await s.commit()
 
 
 # ── auth dependencies ────────────────────────────────────────────────────────
@@ -92,6 +100,21 @@ class AdminCreateUserReq(BaseModel):
 
 class PasswordReq(BaseModel):
     password: str
+
+
+class ModelConfigReq(BaseModel):
+    alias: str
+    provider: str
+    endpoint: str | None = ""
+    fallback_to: str | None = None
+
+
+class AgentReq(BaseModel):
+    name: str
+    system_prompt: str | None = ""
+    tools: list[str] | None = None
+    default_model: int | None = None
+    allowed_roles: str | None = ""
 
 
 # ── auth / регистрация ─────────────────────────────────────────────────────────
@@ -286,6 +309,67 @@ async def api_admin_activity(limit: int = 200, user_id: int | None = None,
                              admin: dict = Depends(admin_user),
                              db: AsyncSession = Depends(get_db)):
     return await repo.activity_log_list(db, limit=limit, user_id=user_id)
+
+
+# ── Конструктор агентов: модели и агенты ──────────────────────────────────────
+
+def _mc_dict(mc):
+    return {"id": mc.id, "alias": mc.alias, "provider": mc.provider,
+            "endpoint": mc.endpoint, "fallback_to": mc.fallback_to}
+
+
+def _agent_dict(a):
+    return {"id": a.id, "name": a.name, "system_prompt": a.system_prompt,
+            "tools": a.tools or [], "default_model": a.default_model,
+            "allowed_roles": a.allowed_roles}
+
+
+@app.get("/api/admin/models")
+async def api_admin_models(admin: dict = Depends(admin_user),
+                           db: AsyncSession = Depends(get_db)):
+    return [_mc_dict(m) for m in await repo.list_model_configs(db)]
+
+
+@app.post("/api/admin/models")
+async def api_admin_create_model(req: ModelConfigReq, admin: dict = Depends(admin_user),
+                                 db: AsyncSession = Depends(get_db)):
+    if await repo.get_model_config_by_alias(db, req.alias):
+        raise HTTPException(400, "Модель с таким алиасом уже есть")
+    mc = await repo.create_model_config(db, req.alias, req.provider,
+                                        req.endpoint or "", req.fallback_to)
+    await db.commit()
+    return _mc_dict(mc)
+
+
+@app.delete("/api/admin/models/{mc_id}")
+async def api_admin_delete_model(mc_id: int, admin: dict = Depends(admin_user),
+                                 db: AsyncSession = Depends(get_db)):
+    await repo.delete_model_config(db, mc_id)
+    await db.commit()
+    return {"ok": True}
+
+
+@app.get("/api/admin/agents")
+async def api_admin_agents(admin: dict = Depends(admin_user),
+                           db: AsyncSession = Depends(get_db)):
+    return [_agent_dict(a) for a in await repo.list_agents(db)]
+
+
+@app.post("/api/admin/agents")
+async def api_admin_create_agent(req: AgentReq, admin: dict = Depends(admin_user),
+                                 db: AsyncSession = Depends(get_db)):
+    agent = await repo.create_agent(db, req.name, req.system_prompt or "",
+                                    req.tools, req.default_model, req.allowed_roles or "")
+    await db.commit()
+    return _agent_dict(agent)
+
+
+@app.delete("/api/admin/agents/{agent_id}")
+async def api_admin_delete_agent(agent_id: int, admin: dict = Depends(admin_user),
+                                 db: AsyncSession = Depends(get_db)):
+    await repo.delete_agent(db, agent_id)
+    await db.commit()
+    return {"ok": True}
 
 
 # ── Экспорт отчётов ──────────────────────────────────────────────────────────

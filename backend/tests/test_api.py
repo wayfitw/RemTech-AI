@@ -119,3 +119,44 @@ async def test_admin_exports(client):
     # сотруднику экспорт запрещён
     anna = (await client.post("/api/login", json={"username": "anna", "password": "1234"})).json()["token"]
     assert (await client.get("/api/admin/export/xlsx", headers=_auth(anna))).status_code == 403
+
+
+async def test_models_and_agents_crud(client):
+    admin = await _register_admin(client)
+
+    # создать модель
+    m = await client.post("/api/admin/models", headers=_auth(admin),
+                          json={"alias": "claude", "provider": "anthropic",
+                                "endpoint": "claude-sonnet-4-6", "fallback_to": "yandex"})
+    assert m.status_code == 200
+    mid = m.json()["id"]
+    # дубликат алиаса → 400
+    dup = await client.post("/api/admin/models", headers=_auth(admin),
+                            json={"alias": "claude", "provider": "anthropic"})
+    assert dup.status_code == 400
+    models = (await client.get("/api/admin/models", headers=_auth(admin))).json()
+    assert any(x["alias"] == "claude" and x["fallback_to"] == "yandex" for x in models)
+
+    # создать агента с этой моделью
+    a = await client.post("/api/admin/agents", headers=_auth(admin),
+                          json={"name": "Продажник", "system_prompt": "Ты менеджер",
+                                "tools": ["create_docx", "search_knowledge_base"],
+                                "default_model": mid, "allowed_roles": "user,admin"})
+    assert a.status_code == 200
+    aid = a.json()["id"]
+    agents = (await client.get("/api/admin/agents", headers=_auth(admin))).json()
+    got = next(x for x in agents if x["id"] == aid)
+    assert got["name"] == "Продажник" and "create_docx" in got["tools"]
+    assert got["default_model"] == mid
+
+    # удаление
+    assert (await client.delete(f"/api/admin/agents/{aid}", headers=_auth(admin))).status_code == 200
+    assert (await client.delete(f"/api/admin/models/{mid}", headers=_auth(admin))).status_code == 200
+
+    # RBAC: сотруднику нельзя
+    await client.post("/api/admin/users", headers=_auth(admin),
+                      json={"username": "worker", "password": "1234", "role": "user"})
+    worker = (await client.post("/api/login", json={"username": "worker", "password": "1234"})).json()["token"]
+    assert (await client.get("/api/admin/models", headers=_auth(worker))).status_code == 403
+    assert (await client.post("/api/admin/agents", headers=_auth(worker),
+                              json={"name": "x"})).status_code == 403
