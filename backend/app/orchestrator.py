@@ -113,11 +113,12 @@ class Orchestrator:
         self._current_docx: dict[int, tuple[bytes, str]] = {}
         self._locks: dict[int, asyncio.Lock] = {}
 
-    async def process(self, conversation_id, user_id, text, attachments, emit: Emit):
+    async def process(self, conversation_id, user_id, text, attachments, emit: Emit,
+                      roles=None):
         lock = self._locks.setdefault(conversation_id, asyncio.Lock())
         async with lock:
             try:
-                await self._run(conversation_id, user_id, text, attachments, emit)
+                await self._run(conversation_id, user_id, text, attachments, emit, roles)
             except Exception as e:
                 await emit({"type": "error", "text": f"Ошибка: {e}"})
 
@@ -148,7 +149,7 @@ class Orchestrator:
             return parts
         return body
 
-    async def _run(self, cid, uid, text, attachments, emit):
+    async def _run(self, cid, uid, text, attachments, emit, roles=None):
         history = await self._load_history(cid)
         user_content = self._build_user_content(cid, text, attachments)
         history.append({"role": "user", "content": user_content})
@@ -184,7 +185,8 @@ class Orchestrator:
                 for block in response.content:
                     if getattr(block, "type", None) == "tool_use":
                         await emit({"type": "tool", "name": block.name, "label": _tool_label(block.name)})
-                        result_text = await self._execute_tool(block.name, block.input, emit, uid, cid)
+                        result_text = await self._execute_tool(
+                            block.name, block.input, emit, uid, cid, roles)
                         tool_results.append({"type": "tool_result", "tool_use_id": block.id,
                                              "content": result_text})
                 history.append({"role": "user", "content": tool_results})
@@ -230,10 +232,20 @@ class Orchestrator:
             fid = rec.id
         await emit({"type": event_type, "file_id": fid, "name": name})
 
-    async def _execute_tool(self, name, params, emit, uid, cid):
+    async def _execute_tool(self, name, params, emit, uid, cid, roles=None):
         try:
             if name == "read_url":
                 return await asyncio.to_thread(websearch.read_url, params["url"])
+
+            if name == "search_knowledge_base":
+                from app import kb
+                from app.embeddings import get_embedder
+                async with SessionLocal() as s:
+                    hits = await kb.search(s, get_embedder(), params["query"], roles=roles)
+                if not hits:
+                    return "В базе знаний ничего не найдено по этому запросу."
+                parts = [f"[{h['file_name']}] {h['text']}" for h in hits]
+                return "Найдено в базе знаний:\n\n" + "\n\n---\n\n".join(parts)
 
             if name == "generate_image":
                 img = await replicate_svc.generate_image_flux(params["prompt"])

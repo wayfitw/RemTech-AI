@@ -97,3 +97,27 @@ async def test_process_persists_dialog(session, monkeypatch):
     assert [m["role"] for m in hist] == ["user", "assistant"]
     assert hist[1]["content"] == "готово"
     await engine.dispose()
+
+
+async def test_search_knowledge_base_tool(session, monkeypatch):
+    """Инструмент search_knowledge_base ищет в БЗ и возвращает релевантный фрагмент."""
+    from app import kb
+    from app.embeddings import FakeEmbedder
+
+    await kb.ingest_document(session, FakeEmbedder(1024), "cat.txt",
+                             "Гусеничный экскаватор XCMG XE215C для земляных работ.")
+    await session.commit()
+
+    base = get_settings().database_url
+    test_url = base.rsplit("/", 1)[0] + "/remtech_test"
+    engine = create_async_engine(test_url)
+    monkeypatch.setattr(orch, "SessionLocal", async_sessionmaker(engine, expire_on_commit=False))
+    monkeypatch.setattr("app.embeddings.get_embedder", lambda: FakeEmbedder(1024))
+
+    async def emit(e):
+        pass
+
+    res = await orch.Orchestrator()._execute_tool(
+        "search_knowledge_base", {"query": "нужен экскаватор для земли"}, emit, 1, 1, None)
+    assert "экскаватор" in res.lower()
+    await engine.dispose()

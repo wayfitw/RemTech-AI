@@ -20,10 +20,11 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import auth, storage
+from app import auth, kb, storage
 from app import repositories as repo
 from app.config import get_settings
 from app.database import SessionLocal, get_db, init_extensions
+from app.embeddings import get_embedder
 from app.orchestrator import orchestrator
 from services import reports
 from services.extract import detect_kind, extract_text
@@ -372,6 +373,44 @@ async def api_admin_delete_agent(agent_id: int, admin: dict = Depends(admin_user
     return {"ok": True}
 
 
+# ── База знаний (только admin) ────────────────────────────────────────────────
+
+def embedder_dep():
+    return get_embedder()
+
+
+@app.post("/api/admin/kb/upload")
+async def api_admin_kb_upload(file: UploadFile = File(...),
+                              owner_role: str | None = Form(None),
+                              admin: dict = Depends(admin_user),
+                              db: AsyncSession = Depends(get_db),
+                              embedder=Depends(embedder_dep)):
+    data = await file.read()
+    text = extract_text(data, file.filename)
+    if not text.strip():
+        raise HTTPException(400, "Не удалось извлечь текст из документа")
+    res = await kb.ingest_document(db, embedder, file.filename, text,
+                                   owner_role=owner_role or None)
+    await repo.log_activity(db, admin["user_id"], "kb_upload",
+                            f"{file.filename} ({res['chunks']} чанков)")
+    await db.commit()
+    return res
+
+
+@app.get("/api/admin/kb")
+async def api_admin_kb_list(admin: dict = Depends(admin_user),
+                            db: AsyncSession = Depends(get_db)):
+    return await repo.list_kb_documents(db)
+
+
+@app.delete("/api/admin/kb/{document_id}")
+async def api_admin_kb_delete(document_id: int, admin: dict = Depends(admin_user),
+                              db: AsyncSession = Depends(get_db)):
+    await repo.delete_kb_document(db, document_id)
+    await db.commit()
+    return {"ok": True}
+
+
 # ── Экспорт отчётов ──────────────────────────────────────────────────────────
 
 async def _report_data(db) -> dict:
@@ -463,7 +502,9 @@ async def ws_chat(ws: WebSocket):
                     txt = "" if kind == "image" else extract_text(data, name)
                     attachments.append({"kind": kind, "name": name, "data": data, "text": txt})
 
-            await orchestrator.process(conversation_id, uid, text, attachments, emit)
+            # админ видит всю базу знаний (roles=None), сотрудник — по своей роли
+            roles = None if user.get("role") == "admin" else [user.get("role", "user")]
+            await orchestrator.process(conversation_id, uid, text, attachments, emit, roles)
     except WebSocketDisconnect:
         return
     except Exception as e:

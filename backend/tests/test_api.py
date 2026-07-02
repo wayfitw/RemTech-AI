@@ -200,3 +200,32 @@ async def test_admin_conversation_views(client):
     assert cm.status_code == 200
     # сотруднику admin-эндпоинты закрыты
     assert (await client.get(f"/api/admin/conversations/{cid}/messages", headers=_auth(anna))).status_code == 403
+
+
+async def test_kb_admin_endpoints(client):
+    from app.embeddings import FakeEmbedder
+    from app.main import app, embedder_dep
+    app.dependency_overrides[embedder_dep] = lambda: FakeEmbedder(1024)
+    try:
+        admin = await _register_admin(client)
+        up = await client.post(
+            "/api/admin/kb/upload", headers=_auth(admin),
+            files={"file": ("reglament.txt",
+                            "Прайс на запчасти XCMG. Экскаватор XE215C.".encode(), "text/plain")},
+            data={"owner_role": "user"})
+        assert up.status_code == 200 and up.json()["chunks"] >= 1
+        doc_id = up.json()["document_id"]
+
+        lst = (await client.get("/api/admin/kb", headers=_auth(admin))).json()
+        assert any(d["id"] == doc_id and d["file_name"] == "reglament.txt" for d in lst)
+
+        # сотруднику загрузка/список закрыты
+        await client.post("/api/admin/users", headers=_auth(admin),
+                          json={"username": "worker", "password": "1234", "role": "user"})
+        worker = (await client.post("/api/login", json={"username": "worker", "password": "1234"})).json()["token"]
+        assert (await client.get("/api/admin/kb", headers=_auth(worker))).status_code == 403
+
+        assert (await client.delete(f"/api/admin/kb/{doc_id}", headers=_auth(admin))).status_code == 200
+        assert (await client.get("/api/admin/kb", headers=_auth(admin))).json() == []
+    finally:
+        app.dependency_overrides.pop(embedder_dep, None)
