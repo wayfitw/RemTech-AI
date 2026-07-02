@@ -35,6 +35,30 @@ def test_doc_editor_read_and_edit_roundtrip():
     assert "Изменённый абзац." in text
 
 
+def test_create_proposal():
+    from docx import Document
+    data = {
+        "filename": "kp", "title": "Поставка спецтехники", "client": "ООО «Стройка»",
+        "markup_percent": 12, "validity_days": 14, "contact": "Иван · +7 900 000",
+        "items": [
+            {"name": "Экскаватор XCMG XE215C", "qty": 1, "price": 9850000},
+            {"name": "Ковш дополнительный", "qty": 2, "price": 150000},
+        ],
+    }
+    out = docgen.create_proposal(data)
+    assert len(out) > 1000
+    text = "\n".join(p.text for p in Document(io.BytesIO(out)).paragraphs)
+    tables_text = " ".join(
+        c.text for t in Document(io.BytesIO(out)).tables for row in t.rows for c in row.cells)
+    assert "КОММЕРЧЕСКОЕ ПРЕДЛОЖЕНИЕ" in tables_text
+    assert "Стройка" in text
+    assert "Экскаватор XCMG XE215C" in tables_text
+    # экскаватор с наценкой 12%: 9 850 000 * 1.12 = 11 032 000
+    assert "11 032 000" in tables_text
+    # итог: 11 032 000 + 2*150 000*1.12 = 11 368 000
+    assert "11 368 000" in tables_text
+
+
 def test_detect_kind():
     assert detect_kind("a.docx") == "docx"
     assert detect_kind("b.PDF") == "pdf"

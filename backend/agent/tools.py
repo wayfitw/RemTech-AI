@@ -120,6 +120,41 @@ TOOLS = [
         },
     },
     {
+        "name": "create_proposal",
+        "description": (
+            "Создаёт коммерческое предложение (КП) в фирменном стиле «Ремтехники» (Word): "
+            "таблица позиций, наценка, итог, условия и контакты. Используй когда просят "
+            "составить/сделать КП или коммерческое предложение. Цены и позиции бери из базы "
+            "знаний (search_knowledge_base) или у пользователя; наценку — из запроса."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "filename": {"type": "string", "description": "Имя файла без расширения"},
+                "title": {"type": "string", "description": "Заголовок КП (на что предложение)"},
+                "client": {"type": "string", "description": "Кому — клиент/организация"},
+                "items": {
+                    "type": "array",
+                    "description": "Позиции предложения",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string", "description": "Наименование позиции"},
+                            "qty": {"type": "number", "description": "Количество", "default": 1},
+                            "price": {"type": "number", "description": "Базовая цена за единицу, ₽"},
+                        },
+                        "required": ["name", "price"],
+                    },
+                },
+                "markup_percent": {"type": "number", "description": "Наценка в процентах", "default": 0},
+                "contact": {"type": "string", "description": "Контакт для связи"},
+                "validity_days": {"type": "integer", "description": "Срок действия (рабочих дней)", "default": 14},
+                "notes": {"type": "string", "description": "Примечания/условия"},
+            },
+            "required": ["filename", "items"],
+        },
+    },
+    {
         "name": "read_doc",
         "description": (
             "Читает структуру загруженного Word-документа (.docx) и возвращает список "

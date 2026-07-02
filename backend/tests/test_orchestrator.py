@@ -121,3 +121,30 @@ async def test_search_knowledge_base_tool(session, monkeypatch):
         "search_knowledge_base", {"query": "нужен экскаватор для земли"}, emit, 1, 1, None)
     assert "экскаватор" in res.lower()
     await engine.dispose()
+
+
+async def test_create_proposal_tool(session, monkeypatch):
+    """Инструмент create_proposal генерирует КП, сохраняет файл и шлёт событие document."""
+    user = await repo.create_user(session, "u", "h$1")
+    conv = await repo.create_conversation(session, user.id, "Новый чат")
+    await session.commit()
+
+    base = get_settings().database_url
+    test_url = base.rsplit("/", 1)[0] + "/remtech_test"
+    engine = create_async_engine(test_url)
+    monkeypatch.setattr(orch, "SessionLocal", async_sessionmaker(engine, expire_on_commit=False))
+
+    events = []
+    async def emit(e):
+        events.append(e)
+
+    params = {"filename": "КП_XE215C", "title": "Экскаватор", "client": "ООО Тест",
+              "markup_percent": 12, "items": [{"name": "XCMG XE215C", "qty": 1, "price": 9850000}]}
+    res = await orch.Orchestrator()._execute_tool("create_proposal", params, emit, user.id, conv.id, None)
+    assert "КП" in res
+    docs = [e for e in events if e["type"] == "document"]
+    assert docs and docs[0]["name"] == "КП_XE215C.docx"
+
+    rec = await repo.get_file_record(session, docs[0]["file_id"])
+    assert rec is not None and rec.kind == "docx" and rec.direction == "output"
+    await engine.dispose()

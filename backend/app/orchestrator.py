@@ -290,6 +290,13 @@ class Orchestrator:
                 await self._save_file(uid, cid, fname, data, "pdf", emit, "document")
                 return f"PDF «{fname}» создан и отправлен пользователю."
 
+            if name == "create_proposal":
+                data = await asyncio.to_thread(docgen.create_proposal, params)
+                fname = (params.get("filename") or "КП") + ".docx"
+                await self._save_file(uid, cid, fname, data, "docx", emit, "document")
+                items = params.get("items") or []
+                return (f"КП «{fname}» создано ({len(items)} позиций) и отправлено пользователю.")
+
             if name == "read_doc":
                 cur = self._current_docx.get(cid)
                 if not cur:
@@ -324,6 +331,8 @@ def _tool_label(name: str) -> str:
         "generate_video": "🎬 Генерирую видео...", "create_docx": "📝 Создаю документ...",
         "create_pdf": "📄 Создаю PDF...", "read_doc": "📖 Читаю документ...",
         "apply_doc_edits": "📝 Редактирую документ...",
+        "create_proposal": "📑 Готовлю КП...",
+        "search_knowledge_base": "📚 Ищу в базе знаний...",
     }.get(name, "⚙️ Делаю...")
 
 

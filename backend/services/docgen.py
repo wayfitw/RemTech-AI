@@ -2,6 +2,7 @@
 - create_docx: markdown-подобный текст → .docx (портировано из mybot _create_docx_sync)
 - create_pdf:  markdown-подобный текст → .pdf (reportlab, кириллица через TTF из конфига)
 """
+import datetime as dt
 import io
 import os
 import re
@@ -240,6 +241,121 @@ def create_docx(content: str, filename: str = "document") -> bytes:
         else:
             p.paragraph_format.first_line_indent = Cm(0.63)
         _add_inline(p, line)
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
+def _num(x) -> str:
+    """Число с разделителями тысяч: 1234567 → '1 234 567'."""
+    try:
+        return f"{round(float(x)):,}".replace(",", " ")
+    except Exception:
+        return str(x)
+
+
+def create_proposal(data: dict) -> bytes:
+    """Коммерческое предложение (КП) в фирменном стиле РемТехники (Word).
+
+    data: {title, client, executor, contact, validity_days, notes, markup_percent,
+    items: [{name, qty, price}]}. price — базовая цена за единицу; сумма считается
+    с наценкой markup_percent.
+    """
+    from docx import Document
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    from docx.shared import Pt, RGBColor
+
+    YELLOW, DARK, BAND = "FFCB05", "1A1A1A", "FFF6D5"
+    ink = RGBColor(0x1A, 0x1A, 0x1A)
+    grey = RGBColor(0x7F, 0x7F, 0x7F)
+
+    doc = Document()
+    normal = doc.styles["Normal"]
+    normal.font.name = "Calibri"
+    normal.font.size = Pt(11)
+
+    def shade(cell, color):
+        tcPr = cell._tc.get_or_add_tcPr()
+        shd = OxmlElement("w:shd")
+        shd.set(qn("w:val"), "clear")
+        shd.set(qn("w:fill"), color)
+        tcPr.append(shd)
+
+    # ── Жёлтая титульная плашка ──────────────────────────────────────────────
+    tbar = doc.add_table(rows=1, cols=1)
+    bc = tbar.rows[0].cells[0]
+    shade(bc, YELLOW)
+    r = bc.paragraphs[0].add_run("КОММЕРЧЕСКОЕ ПРЕДЛОЖЕНИЕ")
+    r.bold = True
+    r.font.size = Pt(18)
+    r.font.color.rgb = ink
+
+    executor = data.get("executor") or "ООО «Ремтехника»"
+    meta = doc.add_paragraph()
+    mr = meta.add_run(f"{executor} · {dt.datetime.now():%d.%m.%Y}")
+    mr.font.size = Pt(10)
+    mr.font.color.rgb = grey
+
+    if data.get("client"):
+        p = doc.add_paragraph()
+        p.add_run("Кому: ").bold = True
+        p.add_run(str(data["client"]))
+    if data.get("title"):
+        p = doc.add_paragraph()
+        tr = p.add_run(str(data["title"]))
+        tr.bold = True
+        tr.font.size = Pt(13)
+
+    # ── Таблица позиций ──────────────────────────────────────────────────────
+    items = data.get("items") or []
+    markup = float(data.get("markup_percent") or 0)
+    headers = ["№", "Наименование", "Кол-во", "Цена, ₽", "Сумма, ₽"]
+    t = doc.add_table(rows=1, cols=len(headers))
+    t.style = "Table Grid"
+    for i, h in enumerate(headers):
+        cell = t.rows[0].cells[i]
+        run = cell.paragraphs[0].add_run(h)
+        run.bold = True
+        run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+        run.font.size = Pt(10)
+        shade(cell, DARK)
+
+    total = 0
+    for idx, it in enumerate(items, 1):
+        qty = float(it.get("qty") or 1)
+        price = float(it.get("price") or 0)
+        summ = round(qty * price * (1 + markup / 100))
+        total += summ
+        vals = [str(idx), str(it.get("name", "")), _num(qty), _num(price), _num(summ)]
+        cells = t.add_row().cells
+        for i, v in enumerate(vals):
+            cells[i].text = str(v)
+            if cells[i].paragraphs[0].runs:
+                cells[i].paragraphs[0].runs[0].font.size = Pt(10)
+            if idx % 2 == 0:
+                shade(cells[i], BAND)
+
+    # ИТОГО
+    trow = t.add_row().cells
+    tl = trow[0].merge(trow[3])
+    tl.paragraphs[0].add_run("ИТОГО" + (f" (с наценкой {markup:g}%)" if markup else "")).bold = True
+    tot = trow[4].paragraphs[0].add_run(_num(total) + " ₽")
+    tot.bold = True
+    for c in (tl, trow[4]):
+        shade(c, YELLOW)
+
+    # ── Условия и контакты ───────────────────────────────────────────────────
+    doc.add_paragraph()
+    if data.get("validity_days"):
+        doc.add_paragraph(f"Предложение действительно {int(data['validity_days'])} рабочих дней.")
+    if data.get("notes"):
+        doc.add_paragraph(str(data["notes"]))
+    if data.get("contact"):
+        p = doc.add_paragraph()
+        p.add_run("Контакт: ").bold = True
+        p.add_run(str(data["contact"]))
 
     buf = io.BytesIO()
     doc.save(buf)
