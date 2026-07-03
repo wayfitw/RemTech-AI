@@ -1,70 +1,56 @@
-# Ремтехника — корпоративный ИИ-ассистент
+# Ремтехника — корпоративный ИИ-ассистент (RemTech-AI)
 
-Веб-версия ассистента (портирование mybot / inter-assist-bot в браузер).
-Стек: **FastAPI + WebSocket** (бэкенд), **React + Vite** (фронтенд), **SQLite**, **Claude Sonnet 4.6**.
+Веб-версия ассистента для компании «Ремтехника» (дилер спецтехники XCMG и запчастей).
+Порт Telegram-бота mybot / inter-assist-bot в браузер с многопользовательским доступом,
+ролями и базой знаний.
 
-> Статус: **Этап 1 — веб-оболочка mybot**. Базовый чат со стримингом, загрузка/скачивание
-> файлов, инструменты: веб-поиск, чтение страниц, создание Word/PDF, редактирование
-> загруженных .docx, генерация изображений (FLUX) и видео (Kling). Авторизация — пока
-> один общий пароль; многопользовательскую + админку делаем в Этапе 2.
+Стек: **FastAPI + WebSocket** (бэкенд, async), **React + Vite** (фронтенд),
+**PostgreSQL + pgvector** (данные и векторный поиск), **Claude** (через шлюз моделей),
+**bge-m3 через Ollama** (эмбеддинги для RAG). Оркестрация — Docker Compose (postgres,
+redis, api, caddy).
+
+> Статус: Этап 1 (фундамент) завершён; Этап 2 (шлюз моделей + агенты + база знаний) —
+> в работе. Многопользовательская авторизация по логину/паролю с ролями (admin/user) и
+> JWT; регистрация — только по приглашению (первый зарегистрированный становится админом).
 
 ## Структура
 
 ```
 remtechnika-ai/
 ├── backend/
-│   ├── main.py            # FastAPI: REST + WebSocket /ws
-│   ├── config.py          # настройки из .env
-│   ├── auth.py            # JWT, один общий пароль (Этап 1)
-│   ├── db.py              # SQLite: users, conversations, chat_history, uploaded_files, activity_log
-│   ├── storage.py         # файлы на диске + записи в БД
-│   ├── agent/
-│   │   ├── orchestrator.py  # агент-луп (портирован из mybot), стриминг через emit()
-│   │   └── tools.py         # схемы инструментов Claude (Этап 1)
-│   ├── services/
-│   │   ├── replicate_svc.py # FLUX (картинки) + Kling (видео)
-│   │   ├── docgen.py        # create_docx (портирован) + create_pdf (reportlab)
-│   │   ├── extract.py       # извлечение текста из docx/pdf/xlsx/pptx
-│   │   └── websearch.py     # read_url (trafilatura)
-│   └── utils/doc_editor.py  # hash-based редактирование .docx (из mybot)
-└── frontend/                # React (Vite): логин, чат, drag-and-drop, скачивание
+│   ├── app/
+│   │   ├── main.py          # FastAPI: REST + WebSocket /ws (точка входа: app.main:app)
+│   │   ├── config.py        # pydantic-settings из .env (гейт секретов в production)
+│   │   ├── database.py      # SQLAlchemy 2.0 async + asyncpg, get_db, init_extensions
+│   │   ├── models.py        # модели по ER (users, conversations, chat_history, …, kb_*, agents, model_configs)
+│   │   ├── repositories.py  # async CRUD и аналитика
+│   │   ├── auth.py          # JWT (HS256), pbkdf2, регистрация по приглашению, RBAC
+│   │   ├── orchestrator.py  # агент-луп, стриминг через emit(), tool-use
+│   │   ├── llm.py           # ModelGateway: выбор провайдера по alias + fallback
+│   │   ├── embeddings.py    # OllamaEmbedder (bge-m3) / FakeEmbedder (тесты)
+│   │   ├── kb.py            # чанкинг + ингест + поиск (pgvector, фильтр по ролям)
+│   │   └── storage.py       # файлы на диске + записи в БД
+│   ├── agent/tools.py       # схемы инструментов
+│   ├── services/            # docgen, reports, extract, websearch, replicate_svc
+│   ├── alembic/             # миграции схемы
+│   └── tests/               # pytest (REST/RBAC/IDOR, auth, репозитории, RAG, миграции)
+├── frontend/                # React (Vite): логин, чат со стримингом, админка
+├── deploy/                  # caddy/Caddyfile, postgres/init
+└── docker-compose.yml
 ```
 
-## База знаний (RAG) — эмбеддинги bge-m3 через Ollama
-
-Для векторизации документов нужен локальный эмбеддер **bge-m3** (бесплатно, данные
-не покидают контур — 152-ФЗ):
-
-```bash
-# 1. Установить Ollama (ollama.com) и запустить сервер
-ollama serve
-
-# 2. Скачать модель эмбеддингов (~1.2 ГБ)
-ollama pull bge-m3
-```
-
-В `.env` (по умолчанию уже так):
-```
-EMBED_BACKEND=ollama
-OLLAMA_URL=http://localhost:11434
-EMBED_MODEL=bge-m3
-```
-Для тестов/без GPU: `EMBED_BACKEND=fake` (детерминированный эмбеддер).
-Загрузка документов — `POST /api/admin/kb/upload` (только admin); поиск —
-инструмент `search_knowledge_base` в агенте (фильтр по ролям).
-
-## Запуск через Docker Compose (целевой стек, EPIC-01)
+## Запуск через Docker Compose (целевой стек)
 
 Поднимает `postgres` (pgvector), `redis`, `api` (FastAPI) и `caddy` (HTTPS в ЛВС):
 
 ```bash
-# 1. Заполни секреты
-cp backend/.env.example backend/.env   # впиши ANTHROPIC_API_KEY, JWT_SECRET и т.д.
+# 1. Заполни секреты (ANTHROPIC_API_KEY, сильный JWT_SECRET, креды Postgres)
+cp backend/.env.example backend/.env
 
 # 2. Собери фронтенд (Caddy раздаёт frontend/dist)
 cd frontend && npm install && npm run build && cd ..
 
-# 3. Подними стек
+# 3. Подними стек (api стартует с APP_ENV=production → гейт секретов активен)
 docker compose up -d --build
 
 # Проверка:
@@ -72,7 +58,7 @@ curl http://localhost/api/health      # {"status":"ok"}
 ```
 
 `postgres` инициализируется с расширением `pgvector` (см. `deploy/postgres/init`).
-Миграции схемы (Alembic) применяются на слое БД (EPIC-01, TASK-0103/0104).
+Миграции Alembic применяются при старте контейнера `api` (`alembic upgrade head`).
 
 ## Запуск (локальная разработка без Docker)
 
@@ -85,6 +71,8 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m alembic upgrade head
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000
 ```
+Первый вход: открой фронтенд и зарегистрируйся — первый аккаунт получит роль `admin`,
+дальше пользователей заводит администратор в панели.
 
 ### 2. Фронтенд
 ```powershell
@@ -92,23 +80,52 @@ cd frontend
 npm install
 npm run dev
 ```
-Открой http://localhost:5173. Пароль по умолчанию — из `APP_PASSWORD` в `backend\.env`
-(`remtechnika`). Vite проксирует `/api` и `/ws` на бэкенд (порт 8000).
+Открой http://localhost:5173. Vite проксирует `/api` и `/ws` на бэкенд (порт 8000).
 
-## Переменные окружения (`backend/.env`)
+## База знаний (RAG) — эмбеддинги bge-m3 через Ollama
+
+Для векторизации документов нужен локальный эмбеддер **bge-m3** (бесплатно, данные
+не покидают контур — 152-ФЗ):
+
+```bash
+ollama serve            # установить Ollama (ollama.com) и запустить сервер
+ollama pull bge-m3      # скачать модель эмбеддингов (~1.2 ГБ)
+```
+В `.env` (по умолчанию уже так): `EMBED_BACKEND=ollama`, `OLLAMA_URL=http://localhost:11434`,
+`EMBED_MODEL=bge-m3`. Для тестов/без GPU: `EMBED_BACKEND=fake` (детерминированный эмбеддер).
+Загрузка документов — `POST /api/admin/kb/upload` (только admin); поиск — инструмент
+`search_knowledge_base` в агенте (фильтр по ролям).
+
+## Переменные окружения
+
+Полный список с комментариями — в `backend/.env.example`. Ключевые:
 
 | Переменная | Назначение |
 |---|---|
-| `ANTHROPIC_API_KEY` | ключ Claude (обязательно) |
-| `REPLICATE_API_TOKEN` | картинки/видео (опционально) |
-| `APP_PASSWORD` | общий пароль входа (Этап 1) |
-| `JWT_SECRET` | секрет для подписи токенов |
-| `PDF_FONT_PATH` | TTF с кириллицей для PDF (по умолчанию Arial/DejaVuSans по ОС) |
-| `CORS_ORIGINS` | разрешённые источники фронтенда |
+| `APP_ENV` | `development` / `production` (в prod включается гейт обязательных секретов) |
+| `JWT_SECRET` | секрет подписи JWT (в prod — не дефолт, ≥32 символов) |
+| `JWT_TTL_HOURS` | срок жизни токена |
+| `DATABASE_URL` | async-строка Postgres (`postgresql+asyncpg://…`) |
+| `REDIS_URL` | адрес Redis |
+| `ANTHROPIC_API_KEY` | ключ Claude |
+| `DEFAULT_MODEL` / `FALLBACK_MODEL` | алиасы моделей в реестре `model_configs` |
+| `EMBED_BACKEND` / `OLLAMA_URL` / `EMBED_MODEL` | эмбеддер для RAG |
+| `CORS_ORIGINS` | разрешённые источники фронтенда (в prod обязателен) |
 
-## Дальше по плану
+## Тесты и CI
 
-- **Этап 2** — настоящая авторизация (логин/пароль, роли admin/user), изоляция данных, дашборд директора.
-- **Этап 3** — база знаний (bge-m3 через Ollama, `search_knowledge_base`).
-- **Этап 4** — КП-генератор, тендер-помощник, маркетинг.
-- **Этап 5** — деплой на Ubuntu (nginx + HTTPS, Ollama на RTX 3060 Ti).
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m ruff check .
+.\.venv\Scripts\python.exe -m pytest -q
+```
+CI (GitHub Actions): ruff + pytest (Postgres+pgvector сервис) для бэкенда и `npm run build`
+для фронтенда. Тесты используют отдельную БД `remtech_test`, миграции — `remtech_migtest`.
+
+## Этапы
+
+- **Этап 1** — фундамент: Docker Compose, async-БД + миграции, модели по ER, JWT + RBAC, IDOR-защита, CI. ✅
+- **Этап 2** — шлюз моделей (реестр/fallback), агенты-модули (конструктор + выбор в чате), база знаний (RAG). 🔄
+- **Этап 3** — TEI (bge-m3 + reranker) на GPU, Celery-конвейер ингеста, HNSW-индекс.
+- **Этап 4** — модули: КП-генератор, тендер-помощник, маркетинг, сервис.
+- **Этап 5** — деплой в ЛВС (Caddy + HTTPS, egress-прокси, Yandex-fallback, локальный vLLM).

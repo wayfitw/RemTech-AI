@@ -38,6 +38,8 @@ services:
     env_file:
       - ./backend/.env
     environment:
+      # production включает гейт обязательных секретов (JWT_SECRET/DATABASE_URL/CORS_ORIGINS).
+      APP_ENV: ${APP_ENV:-production}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-remtech}:${POSTGRES_PASSWORD:-remtech}@postgres:5432/${POSTGRES_DB:-remtech}
       REDIS_URL: redis://redis:6379/0
     depends_on:

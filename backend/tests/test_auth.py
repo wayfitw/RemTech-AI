@@ -21,7 +21,7 @@ def test_token_roundtrip():
 
 async def test_first_registration_is_admin_then_closed(session):
     assert await auth.registration_open(session) is True
-    token, err = await auth.register(session, "director", "1234", "Директор")
+    token, err = await auth.register(session, "director", "pass1234", "Директор")
     await session.commit()
     assert err is None and token
     assert auth.verify(token)["role"] == "admin"
@@ -30,12 +30,12 @@ async def test_first_registration_is_admin_then_closed(session):
 
 
 async def test_login_success_and_failures(session):
-    await auth.register(session, "director", "1234", "Директор")
-    _, err = await auth.admin_create_user(session, "anna", "1234", "Анна", "user")
+    await auth.register(session, "director", "pass1234", "Директор")
+    _, err = await auth.admin_create_user(session, "anna", "pass1234", "Анна", "user")
     await session.commit()
     assert err is None
 
-    token, err = await auth.login(session, "anna", "1234")
+    token, err = await auth.login(session, "anna", "pass1234")
     assert err is None and auth.verify(token)["username"] == "anna"
 
     _, err = await auth.login(session, "anna", "wrong")
@@ -45,16 +45,31 @@ async def test_login_success_and_failures(session):
     u = await repo.get_user_by_username(session, "anna")
     await repo.set_user_active(session, u.id, False)
     await session.commit()
-    _, err = await auth.login(session, "anna", "1234")
+    _, err = await auth.login(session, "anna", "pass1234")
     assert "деактив" in err.lower()
 
 
 async def test_validation_and_duplicate(session):
-    _, err = await auth.register(session, "ab", "1234")
+    # короткий логин
+    _, err = await auth.register(session, "ab", "pass1234")
     assert "короткий" in err.lower()
-    _, err = await auth.register(session, "gooduser", "12")
-    assert "короткий" in err.lower()
-    await auth.register(session, "director", "1234")
+    # дубликат логина
+    await auth.register(session, "director", "pass1234")
     await session.commit()
-    _, err = await auth.admin_create_user(session, "director", "1234")
+    _, err = await auth.admin_create_user(session, "director", "pass1234")
     assert "занят" in err.lower()
+
+
+async def test_password_policy(session):
+    # слишком короткий пароль
+    _, err = await auth.register(session, "gooduser", "ab12")
+    assert "короткий" in err.lower()
+    # достаточной длины, но без цифр — отклоняется
+    _, err = await auth.register(session, "gooduser", "onlyletters")
+    assert "буквы и цифры" in err.lower()
+    # без букв — отклоняется
+    _, err = await auth.register(session, "gooduser", "12345678")
+    assert "буквы и цифры" in err.lower()
+    # валидный пароль проходит
+    token, err = await auth.register(session, "gooduser", "pass1234")
+    assert err is None and token

@@ -66,15 +66,22 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _require_prod_secrets(self) -> "Settings":
+        """В production критичные секреты обязательны и должны быть сильными.
+        Не полагаемся только на факт установки APP_ENV: дефолтный секрет из
+        репозитория запрещён, требуется минимальная длина/энтропия."""
         if self.is_production:
             missing = []
             if not self.jwt_secret or self.jwt_secret == _DEFAULT_JWT:
-                missing.append("JWT_SECRET")
+                missing.append("JWT_SECRET (задан дефолт из репозитория)")
+            elif len(self.jwt_secret) < 32:
+                missing.append("JWT_SECRET (минимум 32 символа)")
             if not self.database_url:
                 missing.append("DATABASE_URL")
+            if not self.cors_origins_list:
+                missing.append("CORS_ORIGINS (пустой список запрещён в production)")
             if missing:
                 raise ValueError(
-                    "В production обязательны переменные: " + ", ".join(missing)
+                    "В production обязательны корректные переменные: " + ", ".join(missing)
                 )
         return self
 

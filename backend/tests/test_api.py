@@ -5,7 +5,7 @@ def _auth(token):
     return {"Authorization": f"Bearer {token}"}
 
 
-async def _register_admin(client, username="director", password="1234"):
+async def _register_admin(client, username="director", password="pass1234"):
     r = await client.post("/api/register",
                           json={"username": username, "password": password, "full_name": "Директор"})
     assert r.status_code == 200, r.text
@@ -24,13 +24,13 @@ async def test_registration_bootstrap_then_closed(client):
     assert me.json()["role"] == "admin"
     # регистрация закрыта
     assert (await client.get("/api/auth/status")).json()["registration_open"] is False
-    r = await client.post("/api/register", json={"username": "hacker", "password": "1234"})
+    r = await client.post("/api/register", json={"username": "hacker", "password": "pass1234"})
     assert r.status_code == 403
 
 
 async def test_login_and_conversations(client):
     await _register_admin(client)
-    r = await client.post("/api/login", json={"username": "director", "password": "1234"})
+    r = await client.post("/api/login", json={"username": "director", "password": "pass1234"})
     assert r.status_code == 200
     t = r.json()["token"]
 
@@ -48,9 +48,9 @@ async def test_file_ownership_idor(client):
     admin = await _register_admin(client)
     # админ создаёт сотрудника
     await client.post("/api/admin/users",
-                      json={"username": "anna", "password": "1234", "full_name": "Анна", "role": "user"},
+                      json={"username": "anna", "password": "pass1234", "full_name": "Анна", "role": "user"},
                       headers=_auth(admin))
-    anna = (await client.post("/api/login", json={"username": "anna", "password": "1234"})).json()["token"]
+    anna = (await client.post("/api/login", json={"username": "anna", "password": "pass1234"})).json()["token"]
 
     # анна загружает файл
     up = await client.post("/api/upload", headers=_auth(anna),
@@ -63,9 +63,9 @@ async def test_file_ownership_idor(client):
 
     # заведём второго обычного сотрудника — ему чужой файл недоступен (IDOR → 403)
     await client.post("/api/admin/users",
-                      json={"username": "pavel", "password": "1234", "role": "user"},
+                      json={"username": "pavel", "password": "pass1234", "role": "user"},
                       headers=_auth(admin))
-    pavel = (await client.post("/api/login", json={"username": "pavel", "password": "1234"})).json()["token"]
+    pavel = (await client.post("/api/login", json={"username": "pavel", "password": "pass1234"})).json()["token"]
     forbidden = await client.get(f"/api/files/{fid}", params={"token": pavel})
     assert forbidden.status_code == 403
 
@@ -73,9 +73,9 @@ async def test_file_ownership_idor(client):
 async def test_admin_rbac_and_management(client):
     admin = await _register_admin(client)
     await client.post("/api/admin/users",
-                      json={"username": "worker", "password": "1234", "full_name": "Работник", "role": "user"},
+                      json={"username": "worker", "password": "pass1234", "full_name": "Работник", "role": "user"},
                       headers=_auth(admin))
-    worker = (await client.post("/api/login", json={"username": "worker", "password": "1234"})).json()["token"]
+    worker = (await client.post("/api/login", json={"username": "worker", "password": "pass1234"})).json()["token"]
 
     # сотрудник не имеет доступа к админке
     assert (await client.get("/api/admin/overview", headers=_auth(worker))).status_code == 403
@@ -88,21 +88,21 @@ async def test_admin_rbac_and_management(client):
 
     # сброс пароля
     rp = await client.post(f"/api/admin/users/{wid}/password",
-                           json={"password": "5678"}, headers=_auth(admin))
+                           json={"password": "pass5678"}, headers=_auth(admin))
     assert rp.status_code == 200
-    assert (await client.post("/api/login", json={"username": "worker", "password": "5678"})).status_code == 200
+    assert (await client.post("/api/login", json={"username": "worker", "password": "pass5678"})).status_code == 200
 
     # деактивация → вход запрещён
     da = await client.post(f"/api/admin/users/{wid}/active",
                            params={"active": "false"}, headers=_auth(admin))
     assert da.status_code == 200
-    assert (await client.post("/api/login", json={"username": "worker", "password": "5678"})).status_code == 401
+    assert (await client.post("/api/login", json={"username": "worker", "password": "pass5678"})).status_code == 401
 
 
 async def test_admin_exports(client):
     admin = await _register_admin(client)
     await client.post("/api/admin/users",
-                      json={"username": "anna", "password": "1234", "full_name": "Анна", "role": "user"},
+                      json={"username": "anna", "password": "pass1234", "full_name": "Анна", "role": "user"},
                       headers=_auth(admin))
     users = (await client.get("/api/admin/users", headers=_auth(admin))).json()
     aid = next(u["id"] for u in users if u["username"] == "anna")
@@ -117,7 +117,7 @@ async def test_admin_exports(client):
     assert user_docx.status_code == 200 and len(user_docx.content) > 2000
 
     # сотруднику экспорт запрещён
-    anna = (await client.post("/api/login", json={"username": "anna", "password": "1234"})).json()["token"]
+    anna = (await client.post("/api/login", json={"username": "anna", "password": "pass1234"})).json()["token"]
     assert (await client.get("/api/admin/export/xlsx", headers=_auth(anna))).status_code == 403
 
 
@@ -155,8 +155,8 @@ async def test_models_and_agents_crud(client):
 
     # RBAC: сотруднику нельзя
     await client.post("/api/admin/users", headers=_auth(admin),
-                      json={"username": "worker", "password": "1234", "role": "user"})
-    worker = (await client.post("/api/login", json={"username": "worker", "password": "1234"})).json()["token"]
+                      json={"username": "worker", "password": "pass1234", "role": "user"})
+    worker = (await client.post("/api/login", json={"username": "worker", "password": "pass1234"})).json()["token"]
     assert (await client.get("/api/admin/models", headers=_auth(worker))).status_code == 403
     assert (await client.post("/api/admin/agents", headers=_auth(worker),
                               json={"name": "x"})).status_code == 403
@@ -165,11 +165,11 @@ async def test_models_and_agents_crud(client):
 async def test_conversation_messages_idor(client):
     admin = await _register_admin(client)
     await client.post("/api/admin/users", headers=_auth(admin),
-                      json={"username": "anna", "password": "1234", "role": "user"})
+                      json={"username": "anna", "password": "pass1234", "role": "user"})
     await client.post("/api/admin/users", headers=_auth(admin),
-                      json={"username": "igor", "password": "1234", "role": "user"})
-    anna = (await client.post("/api/login", json={"username": "anna", "password": "1234"})).json()["token"]
-    igor = (await client.post("/api/login", json={"username": "igor", "password": "1234"})).json()["token"]
+                      json={"username": "igor", "password": "pass1234", "role": "user"})
+    anna = (await client.post("/api/login", json={"username": "anna", "password": "pass1234"})).json()["token"]
+    igor = (await client.post("/api/login", json={"username": "igor", "password": "pass1234"})).json()["token"]
 
     conv = (await client.post("/api/conversations", json={"title": "Анна"}, headers=_auth(anna))).json()
     cid = conv["id"]
@@ -182,8 +182,8 @@ async def test_conversation_messages_idor(client):
 async def test_admin_conversation_views(client):
     admin = await _register_admin(client)
     await client.post("/api/admin/users", headers=_auth(admin),
-                      json={"username": "anna", "password": "1234", "full_name": "Анна", "role": "user"})
-    anna = (await client.post("/api/login", json={"username": "anna", "password": "1234"})).json()["token"]
+                      json={"username": "anna", "password": "pass1234", "full_name": "Анна", "role": "user"})
+    anna = (await client.post("/api/login", json={"username": "anna", "password": "pass1234"})).json()["token"]
     cid = (await client.post("/api/conversations", json={"title": "КП"}, headers=_auth(anna))).json()["id"]
 
     users = (await client.get("/api/admin/users", headers=_auth(admin))).json()
@@ -212,8 +212,8 @@ async def test_agents_visible_by_role(client):
                       json={"name": "Общий", "allowed_roles": ""})
 
     await client.post("/api/admin/users", headers=_auth(admin),
-                      json={"username": "anna", "password": "1234", "role": "user"})
-    anna = (await client.post("/api/login", json={"username": "anna", "password": "1234"})).json()["token"]
+                      json={"username": "anna", "password": "pass1234", "role": "user"})
+    anna = (await client.post("/api/login", json={"username": "anna", "password": "pass1234"})).json()["token"]
 
     user_names = {a["name"] for a in (await client.get("/api/agents", headers=_auth(anna))).json()}
     assert user_names == {"Продажник", "Общий"}  # без «Аналитик» (только admin)
@@ -241,8 +241,8 @@ async def test_kb_admin_endpoints(client):
 
         # сотруднику загрузка/список закрыты
         await client.post("/api/admin/users", headers=_auth(admin),
-                          json={"username": "worker", "password": "1234", "role": "user"})
-        worker = (await client.post("/api/login", json={"username": "worker", "password": "1234"})).json()["token"]
+                          json={"username": "worker", "password": "pass1234", "role": "user"})
+        worker = (await client.post("/api/login", json={"username": "worker", "password": "pass1234"})).json()["token"]
         assert (await client.get("/api/admin/kb", headers=_auth(worker))).status_code == 403
 
         assert (await client.delete(f"/api/admin/kb/{doc_id}", headers=_auth(admin))).status_code == 200

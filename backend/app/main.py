@@ -34,10 +34,13 @@ _DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.doc
 
 settings = get_settings()
 app = FastAPI(title="Remtechnika AI")
+# CORS: только явный whitelist источников; без фолбэка на "*".
+# JWT передаётся в заголовке Authorization, cookie не используются →
+# allow_credentials=False (небезопасная связка "* + credentials" исключена).
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins_list or ["*"],
-    allow_credentials=True,
+    allow_origins=settings.cors_origins_list,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -73,6 +76,14 @@ def admin_user(user: dict = Depends(current_user)) -> dict:
     if user.get("role") != "admin":
         raise HTTPException(403, "Доступ только для администратора")
     return user
+
+
+def role_can_use_agent(role: str, agent) -> bool:
+    """Единая проверка доступа роли к агенту (листинг и исполнение).
+    admin — всегда; пустой allowed_roles — доступен всем; иначе роль обязана
+    входить в список (deny-by-default для перечисленных ролей)."""
+    allowed = (agent.allowed_roles or "").replace(" ", "")
+    return role == "admin" or not allowed or role in allowed.split(",")
 
 
 # ── models ────────────────────────────────────────────────────────────────────
@@ -167,8 +178,7 @@ async def api_agents(user: dict = Depends(current_user), db: AsyncSession = Depe
     role = user.get("role", "user")
     out = []
     for a in await repo.list_agents(db):
-        allowed = (a.allowed_roles or "").replace(" ", "")
-        if role == "admin" or not allowed or role in allowed.split(","):
+        if role_can_use_agent(role, a):
             out.append({"id": a.id, "name": a.name})
     return out
 
@@ -499,6 +509,16 @@ async def ws_chat(ws: WebSocket):
                     conv = await repo.get_conversation(s, conversation_id)
                     if not conv or conv.user_id != uid:
                         await emit({"type": "error", "text": "Чат не найден или недоступен"})
+                        continue
+
+                # RBAC: роль обязана иметь доступ к выбранному агенту (не только в листинге)
+                if agent_id is not None:
+                    agent = await repo.get_agent(s, agent_id)
+                    if not agent:
+                        await emit({"type": "error", "text": "Агент не найден"})
+                        continue
+                    if not role_can_use_agent(user.get("role", "user"), agent):
+                        await emit({"type": "error", "text": "Недостаточно прав для этого агента"})
                         continue
 
                 # вложения — только свои файлы (защита от IDOR)

@@ -63,11 +63,16 @@ async def registration_open(s) -> bool:
     return (await repo.count_registered_users(s)) == 0
 
 
+MIN_PASSWORD_LEN = 8
+
+
 def _validate(username: str, password: str) -> str | None:
     if len(username.strip()) < 3:
         return "Логин слишком короткий (минимум 3 символа)"
-    if len(password) < 4:
-        return "Пароль слишком короткий (минимум 4 символа)"
+    if len(password) < MIN_PASSWORD_LEN:
+        return f"Пароль слишком короткий (минимум {MIN_PASSWORD_LEN} символов)"
+    if not (any(c.isalpha() for c in password) and any(c.isdigit() for c in password)):
+        return "Пароль должен содержать буквы и цифры"
     return None
 
 
