@@ -4,11 +4,11 @@ import datetime as dt
 import io
 import re
 
-# Фирменная гамма РемТехники: жёлтый / чёрный / белый
-YELLOW = "FFCB05"   # титульная плашка
-HEAD = "1A1A1A"     # шапки таблиц (чёрный)
-BAND = "FFF6D5"     # бледно-жёлтая полоса для чередования
-INK = "1A1A1A"      # текст
+# Фирменная гамма — из общего модуля стиля (issue #19)
+from services.docx_style import BAND, DARK, YELLOW, shade
+
+HEAD = DARK   # шапки таблиц (чёрный)
+INK = DARK    # текст
 
 
 def _fmt_dt(s: str | None) -> str:
@@ -153,8 +153,6 @@ def build_xlsx(data: dict) -> bytes:
 
 def build_docx(data: dict) -> bytes:
     from docx import Document
-    from docx.oxml import OxmlElement
-    from docx.oxml.ns import qn
     from docx.shared import Cm, Pt, RGBColor
 
     d = data
@@ -164,13 +162,6 @@ def build_docx(data: dict) -> bytes:
     normal = doc.styles["Normal"]
     normal.font.name = "Calibri"
     normal.font.size = Pt(11)
-
-    def shade(cell, color):
-        tcPr = cell._tc.get_or_add_tcPr()
-        shd = OxmlElement("w:shd")
-        shd.set(qn("w:val"), "clear")
-        shd.set(qn("w:fill"), color)
-        tcPr.append(shd)
 
     def heading(text, size=15):
         p = doc.add_paragraph()
@@ -264,8 +255,6 @@ def build_user_docx(user: dict, convs: list) -> bytes:
     """user: {full_name, username, role}; convs: [{title, updated_at, count,
     items: [{role, content}]}]."""
     from docx import Document
-    from docx.oxml import OxmlElement
-    from docx.oxml.ns import qn
     from docx.shared import Pt, RGBColor
 
     navy = RGBColor(0x1A, 0x1A, 0x1A)   # заголовки (чёрный)
@@ -277,13 +266,6 @@ def build_user_docx(user: dict, convs: list) -> bytes:
     normal = doc.styles["Normal"]
     normal.font.name = "Calibri"
     normal.font.size = Pt(11)
-
-    def shade(cell, color):
-        tcPr = cell._tc.get_or_add_tcPr()
-        shd = OxmlElement("w:shd")
-        shd.set(qn("w:val"), "clear")
-        shd.set(qn("w:fill"), color)
-        tcPr.append(shd)
 
     # Заголовок — жёлтая фирменная плашка
     tbar = doc.add_table(rows=1, cols=1)

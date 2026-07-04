@@ -263,11 +263,10 @@ def create_proposal(data: dict) -> bytes:
     с наценкой markup_percent.
     """
     from docx import Document
-    from docx.oxml import OxmlElement
-    from docx.oxml.ns import qn
     from docx.shared import Pt, RGBColor
 
-    YELLOW, DARK, BAND = "FFCB05", "1A1A1A", "FFF6D5"
+    from services.docx_style import BAND, DARK, YELLOW, shade  # общий стиль (issue #19)
+
     ink = RGBColor(0x1A, 0x1A, 0x1A)
     grey = RGBColor(0x7F, 0x7F, 0x7F)
 
@@ -275,13 +274,6 @@ def create_proposal(data: dict) -> bytes:
     normal = doc.styles["Normal"]
     normal.font.name = "Calibri"
     normal.font.size = Pt(11)
-
-    def shade(cell, color):
-        tcPr = cell._tc.get_or_add_tcPr()
-        shd = OxmlElement("w:shd")
-        shd.set(qn("w:val"), "clear")
-        shd.set(qn("w:fill"), color)
-        tcPr.append(shd)
 
     # ── Жёлтая титульная плашка ──────────────────────────────────────────────
     tbar = doc.add_table(rows=1, cols=1)

@@ -3,11 +3,26 @@
 export function getToken() {
   return localStorage.getItem("token") || "";
 }
-export function setToken(t) {
-  localStorage.setItem("token", t);
-}
 export function clearToken() {
   localStorage.removeItem("token");
+}
+
+// Единый multipart-аплоад (issue #19 — было два почти идентичных дубля).
+async function uploadForm(path, file, fields = {}) {
+  const fd = new FormData();
+  fd.append("file", file);
+  for (const [k, v] of Object.entries(fields)) if (v != null && v !== "") fd.append(k, v);
+  const res = await fetch(`/api${path}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${getToken()}` },
+    body: fd,
+  });
+  if (res.status === 401) {
+    clearToken();
+    throw new Error("Сессия истекла, войдите снова");
+  }
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || "Ошибка загрузки");
+  return res.json();
 }
 
 async function req(path, opts = {}) {
@@ -60,30 +75,10 @@ export const api = {
   adminDeleteAgent: (id) => req(`/admin/agents/${id}`, { method: "DELETE" }),
   adminKbList: () => req("/admin/kb"),
   adminKbDelete: (id) => req(`/admin/kb/${id}`, { method: "DELETE" }),
-  adminKbUpload: async (file, ownerRole) => {
-    const fd = new FormData();
-    fd.append("file", file);
-    if (ownerRole) fd.append("owner_role", ownerRole);
-    const res = await fetch("/api/admin/kb/upload", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${getToken()}` },
-      body: fd,
-    });
-    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || "Ошибка загрузки");
-    return res.json();
-  },
-  upload: async (file, conversationId) => {
-    const fd = new FormData();
-    fd.append("file", file);
-    if (conversationId) fd.append("conversation_id", conversationId);
-    const res = await fetch("/api/upload", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${getToken()}` },
-      body: fd,
-    });
-    if (!res.ok) throw new Error("Не удалось загрузить файл");
-    return res.json();
-  },
+  adminKbUpload: (file, ownerRole) =>
+    uploadForm("/admin/kb/upload", file, { owner_role: ownerRole }),
+  upload: (file, conversationId) =>
+    uploadForm("/upload", file, { conversation_id: conversationId }),
 };
 
 export function fileUrl(fileId) {
