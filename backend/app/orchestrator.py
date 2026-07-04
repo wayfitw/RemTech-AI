@@ -15,6 +15,7 @@ from app.config import get_settings
 from app.database import SessionLocal
 from app.llm import gateway
 from app.logging_config import get_logger
+from app.state import make_state_store
 from services import docgen, replicate_svc, websearch
 
 Emit = Callable[[dict], Awaitable[None]]
@@ -110,15 +111,13 @@ def _sanitize_history(history: list) -> list:
 
 class Orchestrator:
     def __init__(self):
-        self._histories: dict[int, list] = {}
-        self._current_image: dict[int, bytes] = {}
-        self._current_docx: dict[int, tuple[bytes, str]] = {}
-        self._locks: dict[int, asyncio.Lock] = {}
+        # #16 — разделяемое состояние вынесено в state store (memory|redis);
+        # история диалога больше не кэшируется в памяти, а читается из БД.
+        self.state = make_state_store()
 
     async def process(self, conversation_id, user_id, text, attachments, emit: Emit,
                       roles=None, agent_id=None):
-        lock = self._locks.setdefault(conversation_id, asyncio.Lock())
-        async with lock:
+        async with self.state.lock(conversation_id):
             try:
                 await self._run(conversation_id, user_id, text, attachments, emit, roles, agent_id)
             except Exception:
@@ -127,22 +126,21 @@ class Orchestrator:
                 await emit({"type": "error", "text": "Внутренняя ошибка. Попробуйте ещё раз."})
 
     async def _load_history(self, cid) -> list:
-        if cid not in self._histories:
-            async with SessionLocal() as s:
-                self._histories[cid] = await repo.load_history(s, cid, limit=40)
-        return self._histories[cid]
+        # #16 — без in-memory кэша: единый источник истины — БД (нет рассинхрона воркеров)
+        async with SessionLocal() as s:
+            return await repo.load_history(s, cid, limit=40)
 
-    def _build_user_content(self, cid, text, attachments):
+    async def _build_user_content(self, cid, text, attachments):
         parts, doc_context = [], []
         for att in attachments or []:
             if att["kind"] == "image":
-                self._current_image[cid] = att["data"]
+                await self.state.set_image(cid, att["data"])
                 parts.append({"type": "image", "source": {
                     "type": "base64", "media_type": "image/jpeg",
                     "data": base64.standard_b64encode(att["data"]).decode()}})
             else:
                 if att["kind"] == "docx":
-                    self._current_docx[cid] = (att["data"], att["name"])
+                    await self.state.set_docx(cid, att["data"], att["name"])
                 if att.get("text"):
                     doc_context.append(f"Файл «{att['name']}»:\n{att['text']}")
         body = text
@@ -169,7 +167,7 @@ class Orchestrator:
 
     async def _run(self, cid, uid, text, attachments, emit, roles=None, agent_id=None):
         history = await self._load_history(cid)
-        user_content = self._build_user_content(cid, text, attachments)
+        user_content = await self._build_user_content(cid, text, attachments)
         history.append({"role": "user", "content": user_content})
 
         async with SessionLocal() as s:
@@ -280,23 +278,23 @@ class Orchestrator:
                 img = await replicate_svc.generate_image_flux(params["prompt"])
                 if not img:
                     return "Ошибка генерации: FLUX недоступен (вероятно нет баланса Replicate)."
-                self._current_image[cid] = img
+                await self.state.set_image(cid, img)
                 await self._save_file(uid, cid, "image.jpg", img, "image", emit, "image")
                 return "Изображение сгенерировано и отправлено пользователю."
 
             if name == "edit_image":
-                cur = self._current_image.get(cid)
+                cur = await self.state.get_image(cid)
                 if not cur:
                     return "Нет изображения для редактирования. Сначала загрузи или сгенерируй картинку."
                 edited = await replicate_svc.edit_image_flux(cur, params["instruction"])
                 if not edited:
                     return "Ошибка редактирования: FLUX недоступен."
-                self._current_image[cid] = edited
+                await self.state.set_image(cid, edited)
                 await self._save_file(uid, cid, "image_edited.jpg", edited, "image", emit, "image")
                 return "Изображение отредактировано и отправлено пользователю."
 
             if name == "generate_video":
-                cur = self._current_image.get(cid)
+                cur = await self.state.get_image(cid)
                 video = await replicate_svc.generate_video(params["prompt"], cur, params.get("duration", 5))
                 if not video:
                     return "Ошибка генерации видео: Kling недоступен."
@@ -304,12 +302,13 @@ class Orchestrator:
                 return "Видео готово и отправлено пользователю."
 
             if name == "create_docx":
-                if self._current_docx.get(cid):
-                    _, nm = self._current_docx[cid]
+                existing = await self.state.get_docx(cid)
+                if existing:
+                    nm = existing[1]
                     return (f"СТОП. Уже есть активный документ «{nm}». Для правок — read_doc + apply_doc_edits.")
                 data = await asyncio.to_thread(docgen.create_docx, params["content"], params["filename"])
                 fname = params["filename"] + ".docx"
-                self._current_docx[cid] = (data, fname)
+                await self.state.set_docx(cid, data, fname)
                 await self._save_file(uid, cid, fname, data, "docx", emit, "document")
                 return f"Документ «{fname}» создан. Для правок — read_doc + apply_doc_edits."
 
@@ -327,14 +326,14 @@ class Orchestrator:
                 return (f"КП «{fname}» создано ({len(items)} позиций) и отправлено пользователю.")
 
             if name == "read_doc":
-                cur = self._current_docx.get(cid)
+                cur = await self.state.get_docx(cid)
                 if not cur:
                     return "Нет загруженного DOCX. Попроси пользователя прислать .docx файл."
                 from utils.doc_editor import read_doc
                 return await asyncio.to_thread(read_doc, cur[0])
 
             if name == "apply_doc_edits":
-                cur = self._current_docx.get(cid)
+                cur = await self.state.get_docx(cid)
                 if not cur:
                     return "Нет загруженного DOCX. Попроси пользователя прислать .docx файл."
                 ops = params.get("operations", [])
@@ -344,7 +343,7 @@ class Orchestrator:
                 out, diff = await asyncio.to_thread(apply_doc_edits, cur[0], ops)
                 base = cur[1].replace(".docx", "")
                 fname = (params.get("filename") or base + "_правки") + ".docx"
-                self._current_docx[cid] = (out, fname)
+                await self.state.set_docx(cid, out, fname)
                 await self._save_file(uid, cid, fname, out, "docx", emit, "document")
                 return f"Документ обновлён. {diff}"
 

@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     # ── db / очереди ───────────────────────────────────────────────────────────
     database_url: str = "postgresql+asyncpg://remtech:remtech@localhost:5432/remtech"
     redis_url: str = "redis://localhost:6379/0"
+    # состояние оркестратора: memory (один процесс) | redis (масштабирование, issue #16)
+    orchestrator_state_backend: str = "memory"
+    state_ttl_seconds: int = 3600
 
     # ── шлюз моделей (LLM gateway) ─────────────────────────────────────────────
     anthropic_api_key: str = ""

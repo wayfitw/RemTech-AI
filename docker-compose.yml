@@ -44,6 +44,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       OLLAMA_URL: http://ollama:11434
       KB_ASYNC_INGEST: "true"        # ингест БЗ — через Celery-воркер (issue #22)
+      ORCHESTRATOR_STATE_BACKEND: redis   # общее состояние диалога (issue #16)
     depends_on:
       postgres:
         condition: service_healthy
