@@ -41,3 +41,12 @@ def test_migration_upgrade_then_downgrade():
     assert up.returncode == 0, up.stderr
     down = _alembic("downgrade", "base")
     assert down.returncode == 0, down.stderr
+
+
+def test_no_migration_drift():
+    """Issue #20 — схема из миграций совпадает с моделями (autogenerate-diff пуст)."""
+    asyncio.run(_ensure_db())
+    up = _alembic("upgrade", "head")
+    assert up.returncode == 0, up.stderr
+    chk = _alembic("check")
+    assert chk.returncode == 0, "дрейф миграций/моделей:\n" + chk.stdout + chk.stderr

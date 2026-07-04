@@ -24,8 +24,16 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U remtech -d remtech"
           --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
     env:
       DATABASE_URL: postgresql+asyncpg://remtech:remtech@localhost:5432/remtech
+      REDIS_URL: redis://localhost:6379/0
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -37,8 +45,8 @@ jobs:
         run: ruff check .
       - name: Migrations (alembic)
         run: alembic upgrade head
-      - name: Tests (pytest)
-        run: pytest -q
+      - name: Tests (pytest + coverage)
+        run: pytest -q --cov=app --cov=services --cov-report=term-missing --cov-fail-under=70
 
   frontend:
     runs-on: ubuntu-latest
