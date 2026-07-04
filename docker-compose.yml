@@ -68,7 +68,7 @@ services:
   worker:
     build:
       context: ./backend
-    command: ["celery", "-A", "app.celery_app", "worker", "--loglevel=info", "--concurrency=2"]
+    command: ["celery", "-A", "app.celery_app", "worker", "-B", "--loglevel=info", "--concurrency=2"]
     env_file:
       - ./backend/.env
     environment:

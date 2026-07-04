@@ -19,7 +19,8 @@ class Settings(BaseSettings):
     # ── app ──────────────────────────────────────────────────────────────────
     app_env: str = "development"  # development | production
     log_level: str = "INFO"
-    max_upload_mb: int = 25       # лимит размера загружаемого файла (issue #7)
+    max_upload_mb: int = 25             # лимит размера загружаемого файла (issue #7)
+    activity_retention_days: int = 90   # срок хранения записей журнала (issue #13)
 
     # ── auth ─────────────────────────────────────────────────────────────────
     jwt_secret: str = _DEFAULT_JWT

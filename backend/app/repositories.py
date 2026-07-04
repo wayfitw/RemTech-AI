@@ -153,6 +153,14 @@ async def log_activity(s, user_id: int | None, action: str, detail: str = "") ->
     s.add(ActivityLog(user_id=user_id, action=action, detail=detail))
 
 
+async def purge_old_activity(s, days: int) -> int:
+    """Issue #13 — удаляет записи журнала старше N дней (retention ПДн, 152-ФЗ)."""
+    from datetime import datetime, timedelta, timezone
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    res = await s.execute(delete(ActivityLog).where(ActivityLog.created_at < cutoff))
+    return res.rowcount or 0
+
+
 # ── Admin analytics ───────────────────────────────────────────────────────────
 
 async def admin_overview(s) -> dict:

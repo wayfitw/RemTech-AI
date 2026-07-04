@@ -31,3 +31,23 @@ def ingest_document_task(self, document_id: int, text: str) -> int:
     except Exception as exc:
         log.exception("kb ingest failed: doc=%s", document_id)
         raise self.retry(exc=exc)
+
+
+@celery_app.task(name="activity.purge")
+def purge_activity_log_task() -> int:
+    """Issue #13 — периодическая очистка журнала по сроку хранения (retention)."""
+    from app import repositories as repo
+    from app.config import get_settings
+    from app.database import SessionLocal
+
+    days = get_settings().activity_retention_days
+
+    async def _run() -> int:
+        async with SessionLocal() as s:
+            n = await repo.purge_old_activity(s, days)
+            await s.commit()
+            return n
+
+    n = asyncio.run(_run())
+    log.info("activity log purged: %s строк старше %s дней", n, days)
+    return n

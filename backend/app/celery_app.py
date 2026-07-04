@@ -22,4 +22,11 @@ celery_app.conf.update(
     accept_content=["json"],
     task_acks_late=True,
     worker_prefetch_multiplier=1,
+    # Issue #13 — ежедневная очистка журнала по сроку хранения (нужен celery beat, флаг -B).
+    beat_schedule={
+        "purge-activity-log-daily": {
+            "task": "activity.purge",
+            "schedule": 24 * 60 * 60,   # раз в сутки
+        },
+    },
 )
