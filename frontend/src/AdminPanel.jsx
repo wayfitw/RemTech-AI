@@ -451,29 +451,22 @@ function ConvView({ view, onBack }) {
   );
 }
 
-const TOOL_OPTIONS = [
-  ["search_knowledge_base", "База знаний"],
-  ["create_proposal", "Генератор КП"],
-  ["create_docx", "Создать Word"],
-  ["create_pdf", "Создать PDF"],
-  ["read_doc", "Читать документ"],
-  ["apply_doc_edits", "Редактировать документ"],
-  ["generate_image", "Генерация картинок"],
-  ["generate_video", "Генерация видео"],
-  ["read_url", "Читать страницу"],
-  ["web_search", "Веб-поиск"],
-];
-
 function Agents() {
   const [agents, setAgents] = useState([]);
   const [models, setModels] = useState([]);
+  // Список инструментов — из единого реестра на бэкенде (issue #18), без хардкода.
+  const [toolOptions, setToolOptions] = useState([]);
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
   const empty = { name: "", system_prompt: "", tools: [], default_model: "", allowed_roles: [] };
   const [form, setForm] = useState(empty);
 
   function load() { api.adminAgents().then(setAgents).catch((e) => toast.error(e.message)); }
-  useEffect(() => { load(); api.adminModels().then(setModels).catch(() => {}); }, []);
+  useEffect(() => {
+    load();
+    api.adminModels().then(setModels).catch(() => {});
+    api.adminTools().then(setToolOptions).catch(() => {});
+  }, []);
 
   const toggle = (list, v) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
   const modelName = (id) => models.find((m) => m.id === id)?.alias || "по умолчанию";
@@ -518,10 +511,10 @@ function Agents() {
           <div className="agent-fld">
             <span>Инструменты (пусто = все):</span>
             <div className="chk-grid">
-              {TOOL_OPTIONS.map(([id, label]) => (
-                <label key={id}>
-                  <input type="checkbox" checked={form.tools.includes(id)}
-                         onChange={() => setForm({ ...form, tools: toggle(form.tools, id) })} /> {label}
+              {toolOptions.map(({ name, label }) => (
+                <label key={name}>
+                  <input type="checkbox" checked={form.tools.includes(name)}
+                         onChange={() => setForm({ ...form, tools: toggle(form.tools, name) })} /> {label}
                 </label>
               ))}
             </div>

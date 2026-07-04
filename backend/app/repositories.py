@@ -338,3 +338,7 @@ async def search_chunks(s, embedding: list[float], roles: list[str] | None = Non
 
 def _iso(value) -> str | None:
     return value.isoformat(sep=" ", timespec="seconds") if value else None
+
+
+# Публичный алиас (issue #18 — эндпоинты не должны обращаться к приватному _iso).
+iso = _iso

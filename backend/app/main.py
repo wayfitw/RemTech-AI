@@ -3,6 +3,7 @@
 REST: авторизация, чаты, файлы, админка. WebSocket-чат и экспорт — Стадия 3b.
 """
 import json
+from contextlib import asynccontextmanager
 
 from fastapi import (
     Depends,
@@ -21,6 +22,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from agent.registry import tool_options
 from app import auth, kb, storage
 from app import repositories as repo
 from app.config import get_settings
@@ -45,23 +47,9 @@ _login_limiter = RateLimiter(max_events=10, window_seconds=300)     # вход: 
 _register_limiter = RateLimiter(max_events=5, window_seconds=3600)  # регистрация: 5 / час на ip
 _ws_limiter = RateLimiter(max_events=30, window_seconds=60)         # сообщения ws: 30 / мин на пользователя
 
-app = FastAPI(title="Remtechnika AI")
-# CORS: только явный whitelist источников; без фолбэка на "*".
-# JWT передаётся в заголовке Authorization, cookie не используются →
-# allow_credentials=False (небезопасная связка "* + credentials" исключена).
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origins_list,
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-_bearer = HTTPBearer(auto_error=False)
-
-
-@app.on_event("startup")
-async def _startup():
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # #18 — современный lifespan вместо устаревшего @app.on_event.
     await init_extensions()
     # Сид моделей шлюза: основная (claude) + реальный резерв (claude-fast, тот же
     # провайдер, быстрая модель) — issue #21. Yandex/vLLM-провайдеры — стадия 2b.
@@ -74,6 +62,22 @@ async def _startup():
                 s, settings.default_model, "anthropic",
                 settings.model, settings.fallback_model)
             await s.commit()
+    yield
+
+
+app = FastAPI(title="Remtechnika AI", lifespan=lifespan)
+# CORS: только явный whitelist источников; без фолбэка на "*".
+# JWT передаётся в заголовке Authorization, cookie не используются →
+# allow_credentials=False (небезопасная связка "* + credentials" исключена).
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins_list,
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+_bearer = HTTPBearer(auto_error=False)
 
 
 # ── auth dependencies ────────────────────────────────────────────────────────
@@ -247,7 +251,7 @@ async def api_agents(user: dict = Depends(current_user), db: AsyncSession = Depe
 
 def _conv_dict(c):
     return {"id": c.id, "title": c.title,
-            "created_at": repo._iso(c.created_at), "updated_at": repo._iso(c.updated_at)}
+            "created_at": repo.iso(c.created_at), "updated_at": repo.iso(c.updated_at)}
 
 
 @app.get("/api/conversations")
@@ -439,6 +443,12 @@ async def api_admin_delete_model(mc_id: int, admin: dict = Depends(admin_user),
     await repo.log_activity(db, admin["user_id"], "delete_model", f"Удалена модель (id {mc_id})")
     await db.commit()
     return {"ok": True}
+
+
+@app.get("/api/admin/tools")
+async def api_admin_tools(admin: dict = Depends(admin_user)):
+    """Инструменты для конструктора агентов — единый источник (issue #18)."""
+    return tool_options()
 
 
 @app.get("/api/admin/agents")

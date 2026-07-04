@@ -70,6 +70,7 @@ export const api = {
   exportUserDocx: (uid, name) =>
     downloadAuthed(`/admin/users/${uid}/export/docx`, `Переписка_${name}.docx`),
   adminModels: () => req("/admin/models"),
+  adminTools: () => req("/admin/tools"),
   adminAgents: () => req("/admin/agents"),
   adminCreateAgent: (data) => req("/admin/agents", { method: "POST", json: data }),
   adminDeleteAgent: (id) => req(`/admin/agents/${id}`, { method: "DELETE" }),
