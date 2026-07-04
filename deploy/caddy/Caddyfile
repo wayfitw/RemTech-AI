@@ -1,8 +1,20 @@
 # Caddy — обратный прокси + HTTPS в ЛВС.
 # {$SITE_ADDRESS} задаётся в окружении (например, remtech.local или IP).
+# Если задан домен — Caddy включает авто-HTTPS и редирект http→https автоматически.
 # По умолчанию слушаем :80 (для локальной разработки/проверки).
 
 {$SITE_ADDRESS::80} {
+	# Заголовки безопасности (issue #6)
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' ws: wss:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+		# не раскрываем сервер
+		-Server
+	}
+
 	# API и WebSocket → сервис api
 	handle /api/* {
 		reverse_proxy api:8000
@@ -16,6 +28,11 @@
 		root * /srv/frontend
 		try_files {path} /index.html
 		file_server
+	}
+
+	# Ограничение размера тела запроса (issue #7 — дополнительный слой к app-лимиту)
+	request_body {
+		max_size 30MB
 	}
 
 	encode gzip

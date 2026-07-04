@@ -33,9 +33,16 @@ class Base(AsyncAttrs, DeclarativeBase):
     metadata = MetaData(naming_convention=NAMING_CONVENTION)
 
 
+# asyncpg: command_timeout ограничивает время запроса; ssl — TLS к внешней БД (#17)
+_connect_args: dict = {"command_timeout": settings.db_command_timeout}
+if settings.db_ssl:
+    _connect_args["ssl"] = True
+
 engine = create_async_engine(
     settings.database_url,
     pool_pre_ping=True,
+    pool_recycle=settings.db_pool_recycle,
+    connect_args=_connect_args,
     future=True,
 )
 

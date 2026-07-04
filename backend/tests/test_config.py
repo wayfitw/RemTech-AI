@@ -32,9 +32,16 @@ def test_production_requires_cors_origins():
                  database_url="postgresql+asyncpg://u:p@h:5432/db", cors_origins="")
 
 
+def test_production_rejects_weak_db_creds():
+    # дефолтные креды remtech:remtech в production запрещены (issue #5)
+    with pytest.raises(Exception):
+        Settings(_env_file=None, app_env="production", jwt_secret=_STRONG,
+                 database_url="postgresql+asyncpg://remtech:remtech@h:5432/db")
+
+
 def test_production_ok_with_real_secret():
     s = Settings(_env_file=None, app_env="production", jwt_secret=_STRONG,
-                 database_url="postgresql+asyncpg://u:p@h:5432/db")
+                 database_url="postgresql+asyncpg://u:strongpass@h:5432/db")
     assert s.is_production and s.jwt_secret == _STRONG
 
 

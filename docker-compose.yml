@@ -6,8 +6,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-remtech}
       POSTGRES_DB: ${POSTGRES_DB:-remtech}
     ports:
-      # Проброс на хост для локальной разработки/тестов (в проде можно убрать).
-      - "5432:5432"
+      # Только на localhost хоста — не выставляем БД в ЛВС (issue #5).
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./deploy/postgres/init:/docker-entrypoint-initdb.d:ro
@@ -16,20 +16,26 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   redis:
     image: redis:7-alpine
-    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    # Redis под паролем (issue #5). В production задай сильный REDIS_PASSWORD.
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning",
+              "--requirepass", "${REDIS_PASSWORD:-remtech-redis}"]
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redisdata:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "${REDIS_PASSWORD:-remtech-redis}", "ping"]
       interval: 5s
       timeout: 3s
       retries: 10
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   api:
@@ -41,7 +47,7 @@ services:
       # production включает гейт обязательных секретов (JWT_SECRET/DATABASE_URL/CORS_ORIGINS).
       APP_ENV: ${APP_ENV:-production}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-remtech}:${POSTGRES_PASSWORD:-remtech}@postgres:5432/${POSTGRES_DB:-remtech}
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: redis://:${REDIS_PASSWORD:-remtech-redis}@redis:6379/0
       OLLAMA_URL: http://ollama:11434
       KB_ASYNC_INGEST: "true"        # ингест БЗ — через Celery-воркер (issue #22)
       ORCHESTRATOR_STATE_BACKEND: redis   # общее состояние диалога (issue #16)
@@ -52,6 +58,10 @@ services:
         condition: service_healthy
     volumes:
       - filesdata:/app/data
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   # Celery-воркер: фоновый конвейер ингеста базы знаний (issue #22)
@@ -63,7 +73,7 @@ services:
       - ./backend/.env
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-remtech}:${POSTGRES_PASSWORD:-remtech}@postgres:5432/${POSTGRES_DB:-remtech}
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: redis://:${REDIS_PASSWORD:-remtech-redis}@redis:6379/0
       OLLAMA_URL: http://ollama:11434
     depends_on:
       postgres:
@@ -72,6 +82,10 @@ services:
         condition: service_healthy
     volumes:
       - filesdata:/app/data
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   # Локальный эмбеддер bge-m3 (issue #22 — раньше эмбеддер был недостижим в compose).
@@ -85,6 +99,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   caddy:
@@ -99,6 +115,12 @@ services:
       - ./frontend/dist:/srv/frontend:ro
       - caddydata:/data
       - caddyconfig:/config
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE   # для биндинга портов 80/443
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
 volumes:

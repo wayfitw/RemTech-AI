@@ -27,6 +27,9 @@ class Settings(BaseSettings):
 
     # ── db / очереди ───────────────────────────────────────────────────────────
     database_url: str = "postgresql+asyncpg://remtech:remtech@localhost:5432/remtech"
+    db_command_timeout: int = 30     # таймаут запроса (сек), issue #17
+    db_pool_recycle: int = 1800      # пересоздание соединений (сек), issue #17
+    db_ssl: bool = False             # TLS к внешнему Postgres (issue #17)
     redis_url: str = "redis://localhost:6379/0"
     # состояние оркестратора: memory (один процесс) | redis (масштабирование, issue #16)
     orchestrator_state_backend: str = "memory"
@@ -85,6 +88,8 @@ class Settings(BaseSettings):
                 missing.append("JWT_SECRET (минимум 32 символа)")
             if not self.database_url:
                 missing.append("DATABASE_URL")
+            elif "remtech:remtech@" in self.database_url:
+                missing.append("DATABASE_URL (слабые дефолтные креды remtech:remtech)")
             if not self.cors_origins_list:
                 missing.append("CORS_ORIGINS (пустой список запрещён в production)")
             if missing:
