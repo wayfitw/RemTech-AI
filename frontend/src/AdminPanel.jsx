@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api } from "./api.js";
+import { confirmDialog, promptDialog } from "./Dialog.jsx";
 import Markdown from "./Markdown.jsx";
 
 function msgText(content) {
@@ -56,12 +57,12 @@ export default function AdminPanel() {
       const res = await api.adminUserConversations(uid);
       setViewUser(res);
       setViewConv(null);
-    } catch (e) { alert(e.message); }
+    } catch (e) { toast.error(e.message); }
   }
   async function openConv(cid) {
     try {
       setViewConv(await api.adminConversationMessages(cid));
-    } catch (e) { alert(e.message); }
+    } catch (e) { toast.error(e.message); }
   }
 
   const t = data?.totals;
@@ -147,7 +148,13 @@ function KnowledgeBase() {
   }
 
   async function remove(d) {
-    if (!window.confirm(`Удалить «${d.file_name}» из базы знаний?`)) return;
+    const ok = await confirmDialog({
+      title: "Удалить документ",
+      message: `Удалить «${d.file_name}» из базы знаний?`,
+      confirmText: "Удалить",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await api.adminKbDelete(d.id);
       setDocs((x) => x.filter((y) => y.id !== d.id));
@@ -284,7 +291,12 @@ function UsersManage({ users, onOpen, onChanged }) {
   }
 
   async function resetPass(u) {
-    const p = window.prompt(`Новый пароль для «${u.full_name || u.username}»:`);
+    const p = await promptDialog({
+      title: "Сброс пароля",
+      message: `Новый пароль для «${u.full_name || u.username}» (мин. 8 символов, буквы и цифры):`,
+      placeholder: "Новый пароль",
+      confirmText: "Сохранить",
+    });
     if (!p) return;
     try {
       await api.adminResetPassword(u.id, p);
@@ -486,7 +498,13 @@ function Agents() {
   }
 
   async function remove(a) {
-    if (!window.confirm(`Удалить агента «${a.name}»?`)) return;
+    const ok = await confirmDialog({
+      title: "Удалить агента",
+      message: `Удалить агента «${a.name}»?`,
+      confirmText: "Удалить",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await api.adminDeleteAgent(a.id);
       setAgents((x) => x.filter((y) => y.id !== a.id));

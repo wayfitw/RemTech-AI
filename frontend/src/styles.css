@@ -647,3 +647,38 @@ h1, h2, h3, .brand-name { letter-spacing: -0.02em; }
 }
 .send:hover { background: var(--accent-hover); }
 .send:disabled { opacity: 0.5; cursor: default; }
+
+/* ── Диалоги (замена системных confirm/prompt) ─────── */
+.dlg-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 100;
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+  animation: fadeIn 0.15s ease;
+}
+.dlg-card {
+  width: 400px; max-width: 100%;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 16px;
+  box-shadow: 0 24px 70px rgba(0,0,0,0.45); padding: 22px 22px 18px;
+  animation: popUp 0.16s ease;
+}
+.dlg-title { margin: 0 0 8px; font-size: 17px; font-weight: 600; color: var(--text); }
+.dlg-msg { margin: 0; font-size: 14px; line-height: 1.55; color: var(--muted); }
+.dlg-input {
+  margin-top: 15px; width: 100%; box-sizing: border-box; font-family: inherit; font-size: 14px;
+  background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+  border-radius: 10px; padding: 11px 13px; outline: none;
+}
+.dlg-input:focus { border-color: var(--accent); }
+.dlg-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+.dlg-btn {
+  border: none; border-radius: 10px; padding: 9px 18px; font-size: 14px;
+  font-weight: 600; font-family: inherit; cursor: pointer;
+  transition: transform 0.08s ease, background 0.15s ease, border-color 0.15s ease;
+}
+.dlg-btn:active { transform: scale(0.97); }
+.dlg-cancel { background: var(--panel-2); border: 1px solid var(--border); color: var(--text); }
+.dlg-cancel:hover { border-color: var(--text); }
+.dlg-ok { background: var(--accent); color: var(--on-accent); }
+.dlg-ok:hover { background: var(--accent-hover); }
+.dlg-danger { background: #e5484d; color: #fff; }
+.dlg-danger:hover { background: #d93a3f; }
+@media (prefers-reduced-motion: reduce) { .dlg-overlay, .dlg-card { animation: none; } }

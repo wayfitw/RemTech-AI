@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, getToken, clearToken, openSocket, fileUrl } from "./api.js";
+import { confirmDialog } from "./Dialog.jsx";
 import { Toaster, toast } from "sonner";
 import AdminPanel from "./AdminPanel.jsx";
 import Markdown from "./Markdown.jsx";
@@ -16,8 +17,13 @@ function extractText(content) {
   return "";
 }
 
-function clearAppCache() {
-  if (!window.confirm("Очистить локальный кеш и перезагрузить страницу? Вход сохранится.")) return;
+async function clearAppCache() {
+  const ok = await confirmDialog({
+    title: "Очистить кеш",
+    message: "Очистить локальный кеш и перезагрузить страницу? Вход сохранится.",
+    confirmText: "Очистить",
+  });
+  if (!ok) return;
   const token = localStorage.getItem("token");
   const theme = localStorage.getItem("theme");
   localStorage.clear();
@@ -317,7 +323,13 @@ function Chat({ onLogout, theme, onToggleTheme }) {
   }
 
   async function deleteChat(id) {
-    if (!window.confirm("Удалить этот чат?")) return;
+    const ok = await confirmDialog({
+      title: "Удалить чат",
+      message: "Удалить этот чат? Действие необратимо.",
+      confirmText: "Удалить",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await api.deleteConversation(id);
     } catch (err) {
