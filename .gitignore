@@ -25,3 +25,7 @@ frontend/.vite/
 Thumbs.db
 .vscode/
 .idea/
+
+# coverage
+backend/.coverage
+htmlcov/
