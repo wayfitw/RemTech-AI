@@ -355,6 +355,21 @@ class Orchestrator:
                 items = params.get("items") or []
                 return f"КП «{base}» создано в {' и '.join(made)} ({len(items)} позиций) и отправлено пользователю."
 
+            if name == "fill_template":
+                cur = await self.state.get_docx(cid)
+                if not cur:
+                    return "Нет загруженного шаблона. Пришли .docx-шаблон с полями {{ПОЛЕ}}."
+                values = {f["name"]: f["value"] for f in (params.get("fields") or [])}
+                out, filled, remaining = await asyncio.to_thread(docgen.fill_template, cur[0], values)
+                base = cur[1].replace(".docx", "").replace("SHABLON_", "").replace("SHABLON", "")
+                fname = (params.get("filename") or (base + "_заполнен")) + ".docx"
+                await self.state.set_docx(cid, out, fname)
+                await self._save_file(uid, cid, fname, out, "docx", emit, "document")
+                msg = f"Шаблон заполнен: {len(filled)} полей. Документ «{fname}» отправлен."
+                if remaining:
+                    msg += " Осталось заполнить: " + ", ".join("{{" + r + "}}" for r in remaining) + "."
+                return msg
+
             if name == "read_doc":
                 cur = await self.state.get_docx(cid)
                 if not cur:

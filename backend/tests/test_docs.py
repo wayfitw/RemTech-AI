@@ -71,6 +71,28 @@ def test_create_proposal_pdf():
     assert out[:5] == b"%PDF-" and len(out) > 1000
 
 
+def test_fill_template():
+    # issue #26 — подстановка {{ПОЛЕ}} с сохранением структуры
+    from docx import Document
+    doc = Document()
+    doc.add_paragraph("Договор с {{КЛИЕНТ}} на сумму {{ЦЕНА}} рублей.")
+    t = doc.add_table(rows=1, cols=2)
+    t.rows[0].cells[0].text = "Дата: {{ДАТА}}"
+    t.rows[0].cells[1].text = "Поле {{НЕ_ЗАПОЛНЕНО}}"
+    buf = io.BytesIO()
+    doc.save(buf)
+
+    out, filled, remaining = docgen.fill_template(
+        buf.getvalue(), {"КЛИЕНТ": "ООО Ромашка", "ЦЕНА": "1 000 000", "ДАТА": "08.07.2026"})
+    d = Document(io.BytesIO(out))
+    text = "\n".join(p.text for p in d.paragraphs)
+    tables = " ".join(c.text for tb in d.tables for r in tb.rows for c in r.cells)
+    assert "ООО Ромашка" in text and "1 000 000" in text and "{{КЛИЕНТ}}" not in text
+    assert "08.07.2026" in tables
+    assert set(filled) == {"КЛИЕНТ", "ЦЕНА", "ДАТА"}
+    assert remaining == ["НЕ_ЗАПОЛНЕНО"]
+
+
 def test_detect_kind():
     assert detect_kind("a.docx") == "docx"
     assert detect_kind("b.PDF") == "pdf"

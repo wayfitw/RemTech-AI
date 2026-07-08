@@ -363,6 +363,57 @@ def create_proposal(data: dict) -> bytes:
     return buf.getvalue()
 
 
+_PLACEHOLDER_RE = re.compile(r"\{\{([^}]+)\}\}")
+
+
+def fill_template(data: bytes, values: dict) -> tuple[bytes, list[str], list[str]]:
+    """Issue #26 — заполнение фирменного шаблона .docx: подстановка {{ПОЛЕ}} → значение
+    с сохранением форматирования. Возвращает (bytes, заполненные_поля, оставшиеся_плейсхолдеры)."""
+    from docx import Document
+
+    doc = Document(io.BytesIO(data))
+    filled: set[str] = set()
+
+    def _replace(text: str) -> str:
+        def sub(m):
+            key = m.group(1).strip()
+            if key in values:
+                filled.add(key)
+                return str(values[key])
+            return m.group(0)   # оставляем незаполненным
+        return _PLACEHOLDER_RE.sub(sub, text)
+
+    def _process(par) -> None:
+        full = "".join(r.text for r in par.runs)
+        if "{{" not in full:
+            return
+        new = _replace(full)
+        if new != full and par.runs:
+            # переписываем в первый run (сохраняет стиль абзаца), остальные очищаем
+            par.runs[0].text = new
+            for r in par.runs[1:]:
+                r.text = ""
+
+    for par in doc.paragraphs:
+        _process(par)
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                for par in cell.paragraphs:
+                    _process(par)
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    # оставшиеся незаполненные плейсхолдеры (по всему тексту)
+    all_text = "\n".join(p.text for p in Document(io.BytesIO(buf.getvalue())).paragraphs)
+    for t in Document(io.BytesIO(buf.getvalue())).tables:
+        for row in t.rows:
+            for cell in row.cells:
+                all_text += "\n" + cell.text
+    remaining = sorted(set(_PLACEHOLDER_RE.findall(all_text)))
+    return buf.getvalue(), sorted(filled), remaining
+
+
 def create_proposal_pdf(data: dict) -> bytes:
     """Коммерческое предложение (КП) в фирменном стиле «Ремтехники» (PDF, issue #28).
     Те же данные, что и create_proposal: {title, client, executor, contact,

@@ -194,4 +194,32 @@ TOOLS = [
             "required": ["operations"],
         },
     },
+    {
+        "name": "fill_template",
+        "description": (
+            "Заполняет загруженный .docx-шаблон: подставляет значения в поля вида "
+            "{{ПОЛЕ}}, сохраняя форматирование. Используй когда пользователь прислал "
+            "шаблон (договор/КП/заявку) с плейсхолдерами и просит заполнить его данными. "
+            "Сначала пользователь загружает .docx-шаблон, затем ты вызываешь fill_template."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "fields": {
+                    "type": "array",
+                    "description": "Пары поле→значение для подстановки",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string", "description": "Имя поля без скобок, напр. КЛИЕНТ"},
+                            "value": {"type": "string", "description": "Значение для подстановки"},
+                        },
+                        "required": ["name", "value"],
+                    },
+                },
+                "filename": {"type": "string", "description": "Имя выходного файла без расширения"},
+            },
+            "required": ["fields"],
+        },
+    },
 ]
