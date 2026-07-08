@@ -491,7 +491,8 @@ async def api_admin_kb_upload(file: UploadFile = File(...),
     data = await _read_upload_limited(file)
     if err := filecheck.ensure_allowed(file.filename, data):
         raise HTTPException(400, err)
-    text = extract_text(data, file.filename)
+    # для БЗ берём больший лимит текста — длинные документы не теряют хвост (аудит БЗ)
+    text = extract_text(data, file.filename, max_chars=settings.kb_extract_max_chars)
     if not text.strip():
         raise HTTPException(400, "Не удалось извлечь текст из документа")
 

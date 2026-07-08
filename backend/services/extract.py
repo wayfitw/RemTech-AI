@@ -41,25 +41,30 @@ def detect_kind(filename: str) -> str:
     return "other"
 
 
-def extract_text(data: bytes, filename: str) -> str:
+# Лимит текста на документ. По умолчанию — для вложений в чат (экономим контекст);
+# для ингеста базы знаний вызывающая сторона передаёт больший max_chars (issue #22/аудит БЗ).
+DEFAULT_MAX_CHARS = 20_000
+
+
+def extract_text(data: bytes, filename: str, max_chars: int = DEFAULT_MAX_CHARS) -> str:
     kind = detect_kind(filename)
     try:
         if kind == "docx":
-            return _docx_text(data)
+            return _docx_text(data, max_chars)
         if kind == "pdf":
-            return _pdf_text(data)
+            return _pdf_text(data, max_chars)
         if kind == "xlsx":
-            return _xlsx_text(data)
+            return _xlsx_text(data, max_chars)
         if kind == "pptx":
-            return _pptx_text(data)
+            return _pptx_text(data, max_chars)
         if kind == "text":
-            return data.decode("utf-8", errors="replace")[:20000]
+            return data.decode("utf-8", errors="replace")[:max_chars]
     except Exception as e:
         return f"[Не удалось извлечь текст из {filename}: {e}]"
     return ""
 
 
-def _docx_text(data: bytes) -> str:
+def _docx_text(data: bytes, max_chars: int = DEFAULT_MAX_CHARS) -> str:
     _guard_zip(data)
     from docx import Document
     doc = Document(io.BytesIO(data))
@@ -69,17 +74,17 @@ def _docx_text(data: bytes) -> str:
             cells = [c.text.strip() for c in row.cells]
             if any(cells):
                 parts.append(" | ".join(cells))
-    return "\n".join(parts)[:20000]
+    return "\n".join(parts)[:max_chars]
 
 
-def _pdf_text(data: bytes) -> str:
+def _pdf_text(data: bytes, max_chars: int = DEFAULT_MAX_CHARS) -> str:
     from pypdf import PdfReader
     reader = PdfReader(io.BytesIO(data))
     parts = [page.extract_text() or "" for page in reader.pages]
-    return "\n".join(parts)[:20000]
+    return "\n".join(parts)[:max_chars]
 
 
-def _xlsx_text(data: bytes) -> str:
+def _xlsx_text(data: bytes, max_chars: int = DEFAULT_MAX_CHARS) -> str:
     _guard_zip(data)
     from openpyxl import load_workbook
     wb = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
@@ -90,10 +95,10 @@ def _xlsx_text(data: bytes) -> str:
             cells = [str(c) for c in row if c is not None]
             if cells:
                 parts.append(" | ".join(cells))
-    return "\n".join(parts)[:20000]
+    return "\n".join(parts)[:max_chars]
 
 
-def _pptx_text(data: bytes) -> str:
+def _pptx_text(data: bytes, max_chars: int = DEFAULT_MAX_CHARS) -> str:
     _guard_zip(data)
     from pptx import Presentation
     prs = Presentation(io.BytesIO(data))
@@ -103,4 +108,4 @@ def _pptx_text(data: bytes) -> str:
         for shape in slide.shapes:
             if shape.has_text_frame and shape.text_frame.text.strip():
                 parts.append(shape.text_frame.text)
-    return "\n".join(parts)[:20000]
+    return "\n".join(parts)[:max_chars]

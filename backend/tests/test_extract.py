@@ -39,3 +39,10 @@ def test_extract_docx_bomb_is_contained():
     # extract_text ловит исключение и возвращает сообщение, а не разворачивает бомбу
     out = extract_text(_bomb_zip(), "payload.docx")
     assert "Не удалось извлечь" in out
+
+
+def test_extract_respects_max_chars():
+    # аудит БЗ: длинные документы не должны обрезаться дефолтным лимитом при ингесте
+    big = ("абвгд " * 10_000).encode()   # ~60k символов
+    assert len(extract_text(big, "doc.txt")) == 20_000            # дефолт для чата
+    assert len(extract_text(big, "doc.txt", max_chars=200_000)) == len(big.decode())  # для БЗ — целиком

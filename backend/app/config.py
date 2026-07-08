@@ -59,6 +59,8 @@ class Settings(BaseSettings):
     embed_dim: int = 1024
     kb_top_k: int = 5
     kb_async_ingest: bool = False    # True → ингест через Celery-воркер (issue #22)
+    # Лимит извлечения текста для ингеста БЗ: длинные договоры/КП не режем на 20k (аудит БЗ)
+    kb_extract_max_chars: int = 200_000
 
     # ── файлы / документы ──────────────────────────────────────────────────────
     files_dir: str = "data/files"
