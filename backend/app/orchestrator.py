@@ -213,6 +213,9 @@ class Orchestrator:
                 tool_results = []
                 for block in response.content:
                     if getattr(block, "type", None) == "tool_use":
+                        # #11 — аудит вызовов инструментов (в т.ч. вызванных косвенно из
+                        # недоверенного контента); аргументы не логируем (могут быть ПДн)
+                        log.info("tool_use uid=%s cid=%s tool=%s", uid, cid, block.name)
                         await emit({"type": "tool", "name": block.name, "label": _tool_label(block.name)})
                         result_text = await self._execute_tool(
                             block.name, block.input, emit, uid, cid, roles, sources)
