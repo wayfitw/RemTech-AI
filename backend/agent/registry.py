@@ -27,6 +27,19 @@ TOOL_META: dict[str, tuple[str, str]] = {
 }
 
 
+# Issue #30 — инструменты с побочными/дорогими/исходящими действиями требуют
+# подтверждения пользователя ПЕРЕД выполнением. Признак ведётся здесь (в коде,
+# не в промпте — модель не должна «уговорить себя» пропустить шаг). Сюда же по
+# мере появления добавляются отправляющие/публикующие инструменты (EPIC-05/08/10).
+NEEDS_CONFIRM: set[str] = {
+    "generate_video",   # дорого (баланс Replicate) и долго
+}
+
+
+def needs_confirm(name: str) -> bool:
+    return name in NEEDS_CONFIRM
+
+
 def status_label(name: str) -> str:
     """Короткая строка статуса в чате при вызове инструмента."""
     meta = TOOL_META.get(name)
@@ -41,5 +54,6 @@ def tool_options() -> list[dict]:
         if not name:
             continue
         meta = TOOL_META.get(name)
-        out.append({"name": name, "label": meta[1] if meta else name})
+        out.append({"name": name, "label": meta[1] if meta else name,
+                    "confirm": name in NEEDS_CONFIRM})
     return out

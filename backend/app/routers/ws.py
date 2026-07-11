@@ -1,4 +1,9 @@
-"""Роутер WebSocket-чата: авторизация по токену, лимит частоты, агент-цикл."""
+"""Роутер WebSocket-чата: авторизация по тикету, лимит частоты, агент-цикл.
+
+Ход (turn) запускается как задача, чтобы цикл приёма мог параллельно получать
+ответ пользователя на запрос подтверждения действия (issue #30).
+"""
+import asyncio
 import json
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -35,6 +40,7 @@ async def ws_chat(ws: WebSocket):
     async def emit(event: dict):
         await ws.send_text(json.dumps(event, ensure_ascii=False))
 
+    turn_task = None
     while True:
         # Issue #15 — одна битая рамка/ошибка кадра не рвёт всю WS-сессию.
         try:
@@ -47,9 +53,19 @@ async def ws_chat(ws: WebSocket):
             await emit({"type": "error", "text": "Некорректный формат сообщения"})
             continue
 
+        # Issue #30 — ответ на запрос подтверждения (приходит во время активного хода)
+        if msg.get("type") == "confirm":
+            orchestrator.resolve_confirmation(msg.get("conversation_id"), msg.get("approved"))
+            continue
+
         # Issue #3 — лимит частоты сообщений на пользователя
         if not _ws_limiter.allow(str(uid)):
             await emit({"type": "error", "text": "Слишком часто. Подождите немного."})
+            continue
+
+        # один ход за раз: пока идёт ответ, новые сообщения не принимаем
+        if turn_task and not turn_task.done():
+            await emit({"type": "error", "text": "Дождитесь ответа на предыдущее сообщение."})
             continue
 
         try:
@@ -96,7 +112,9 @@ async def ws_chat(ws: WebSocket):
 
             # админ видит всю базу знаний (roles=None), сотрудник — по своей роли
             roles = None if user.get("role") == "admin" else [user.get("role", "user")]
-            await orchestrator.process(conversation_id, uid, text, attachments, emit, roles, agent_id)
+            # #30 — ход как задача: цикл продолжает принимать сообщения (в т.ч. confirm)
+            turn_task = asyncio.create_task(
+                orchestrator.process(conversation_id, uid, text, attachments, emit, roles, agent_id))
         except WebSocketDisconnect:
             return
         except Exception:

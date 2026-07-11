@@ -283,6 +283,8 @@ function Chat({ onLogout, theme, onToggleTheme }) {
           return { ...cur, docs: [...cur.docs, { id: ev.file_id, name: ev.name }] };
         case "sources":  // #29 — документы БЗ, на которые опирался ответ
           return { ...cur, sources: ev.items || [] };
+        case "awaiting_confirmation":  // #30 — запрос подтверждения действия
+          return { ...cur, confirm: { tool: ev.tool, label: ev.label }, status: "" };
         case "error":
           return { ...cur, text: (cur.text ? cur.text + "\n\n" : "") + "⚠️ " + ev.text, status: "" };
         default:
@@ -390,6 +392,14 @@ function Chat({ onLogout, theme, onToggleTheme }) {
     setPending([]);
     setBusy(true);
     setDraft({ role: "assistant", text: "", status: "Думаю...", images: [], docs: [] });
+  }
+
+  // #30 — ответ на запрос подтверждения действия
+  function answerConfirm(approved) {
+    wsRef.current?.send(JSON.stringify({
+      type: "confirm", conversation_id: activeIdRef.current, approved,
+    }));
+    setDraft((d) => (d ? { ...d, confirm: null, status: approved ? "Выполняю..." : "" } : d));
   }
 
   function onKeyDown(e) {
@@ -529,7 +539,7 @@ function Chat({ onLogout, theme, onToggleTheme }) {
           ) : (
             <>
               {messages.map((m, i) => <Message key={i} m={m} />)}
-              {draft && <Message m={draft} streaming />}
+              {draft && <Message m={draft} streaming onConfirm={answerConfirm} />}
             </>
           )}
         </div>
@@ -693,7 +703,7 @@ function AuthImage({ id, name }) {
   );
 }
 
-function Message({ m, streaming }) {
+function Message({ m, streaming, onConfirm }) {
   return (
     <div className={"msg " + m.role}>
       <div className="bubble">
@@ -701,6 +711,17 @@ function Message({ m, streaming }) {
           <div className="status">
             <i className="ti ti-file-text" />{m.status}
             {streaming && !m.text && <TypingDots />}
+          </div>
+        )}
+        {m.confirm && (
+          <div className="confirm-box">
+            <div className="confirm-text">
+              <i className="ti ti-alert-triangle" /> Подтвердите действие: <b>{m.confirm.label}</b>
+            </div>
+            <div className="confirm-actions">
+              <button className="confirm-yes" onClick={() => onConfirm?.(true)}>Подтвердить</button>
+              <button className="confirm-no" onClick={() => onConfirm?.(false)}>Отменить</button>
+            </div>
           </div>
         )}
         {m.text && (

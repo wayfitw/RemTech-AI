@@ -8,6 +8,7 @@ import base64
 from datetime import datetime
 from typing import Awaitable, Callable
 
+from agent.registry import needs_confirm
 from agent.registry import status_label as _tool_label
 from agent.tools import TOOLS
 from app import repositories as repo
@@ -118,11 +119,43 @@ def _sanitize_history(history: list) -> list:
     return clean
 
 
+CONFIRM_TIMEOUT = 120   # сек — сколько ждём подтверждения пользователя (issue #30)
+
+
 class Orchestrator:
     def __init__(self):
         # #16 — разделяемое состояние вынесено в state store (memory|redis);
         # история диалога больше не кэшируется в памяти, а читается из БД.
         self.state = make_state_store()
+        # #30 — ожидающие подтверждения действия: cid -> Future(bool)
+        self._pending_confirm: dict[int, asyncio.Future] = {}
+
+    def resolve_confirmation(self, cid, approved: bool) -> None:
+        """Вызывается WS-обработчиком при ответе пользователя на запрос подтверждения."""
+        fut = self._pending_confirm.get(int(cid)) if cid is not None else None
+        if fut and not fut.done():
+            fut.set_result(bool(approved))
+
+    async def _confirm_if_needed(self, name, cid, uid, emit) -> bool:
+        """Issue #30 — кодовый гейт: для отмеченных инструментов ждём явного согласия
+        пользователя. Без подтверждения (отказ/таймаут) действие НЕ выполняется."""
+        if not needs_confirm(name):
+            return True
+        loop = asyncio.get_event_loop()
+        fut = loop.create_future()
+        self._pending_confirm[cid] = fut
+        await emit({"type": "awaiting_confirmation", "tool": name, "label": _tool_label(name)})
+        try:
+            approved = await asyncio.wait_for(fut, timeout=CONFIRM_TIMEOUT)
+        except asyncio.TimeoutError:
+            approved = False
+        finally:
+            self._pending_confirm.pop(cid, None)
+        async with SessionLocal() as s:
+            await repo.log_activity(s, uid, "confirm",
+                                    f"{name}: {'подтверждено' if approved else 'отклонено/таймаут'}")
+            await s.commit()
+        return approved
 
     async def process(self, conversation_id, user_id, text, attachments, emit: Emit,
                       roles=None, agent_id=None):
@@ -216,6 +249,11 @@ class Orchestrator:
                         # #11 — аудит вызовов инструментов (в т.ч. вызванных косвенно из
                         # недоверенного контента); аргументы не логируем (могут быть ПДн)
                         log.info("tool_use uid=%s cid=%s tool=%s", uid, cid, block.name)
+                        # #30 — гейт подтверждения для отмеченных инструментов
+                        if not await self._confirm_if_needed(block.name, cid, uid, emit):
+                            tool_results.append({"type": "tool_result", "tool_use_id": block.id,
+                                                 "content": "Действие отменено пользователем — не выполнено."})
+                            continue
                         await emit({"type": "tool", "name": block.name, "label": _tool_label(block.name)})
                         result_text = await self._execute_tool(
                             block.name, block.input, emit, uid, cid, roles, sources)
