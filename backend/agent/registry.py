@@ -24,7 +24,22 @@ TOOL_META: dict[str, tuple[str, str]] = {
     "read_doc":              ("📖 Читаю документ...",          "Читать документ"),
     "apply_doc_edits":       ("📝 Редактирую документ...",     "Редактировать документ"),
     "fill_template":         ("📋 Заполняю шаблон...",         "Заполнить шаблон"),
+    "search_tenders":        ("📈 Ищу тендеры на ЕИС...",      "Поиск тендеров"),
 }
+
+
+# Issue #35 (EPIC-08) — пер-инструментный RBAC: инструмент доступен только
+# перечисленным ролям (admin — всегда). Отсутствие записи → доступен всем ролям
+# (как web_search/read_url). Оркестратор убирает недоступные инструменты из
+# списка для Claude ещё до вызова — модель их «не видит».
+TOOL_ROLES: dict[str, set[str]] = {
+    "search_tenders": {"закупки", "руководство"},
+}
+
+
+def role_can_use_tool(role: str, name: str) -> bool:
+    allowed = TOOL_ROLES.get(name)
+    return role == "admin" or not allowed or role in allowed
 
 
 # Issue #30 — инструменты с побочными/дорогими/исходящими действиями требуют

@@ -104,6 +104,23 @@ def _fetch_html(url: str) -> str:
         raise _UnsafeRedirect("слишком много редиректов")
 
 
+class UnsafeUrl(Exception):
+    """Ссылка не прошла SSRF-проверку либо источник недоступен."""
+
+
+def fetch_raw(url: str) -> str:
+    """Безопасно (SSRF-контур #8) загружает сырой ответ по URL и возвращает текст.
+    В отличие от read_url НЕ прогоняет через trafilatura — нужно для RSS/XML/JSON
+    (напр. выгрузки ЕИС, issue #35). Бросает UnsafeUrl при отказе/недоступности."""
+    ok, reason = _is_safe_url(url)
+    if not ok:
+        raise UnsafeUrl(reason)
+    try:
+        return _fetch_html(url)
+    except _UnsafeRedirect as e:
+        raise UnsafeUrl(str(e)) from e
+
+
 def read_url(url: str) -> str:
     ok, reason = _is_safe_url(url)
     if not ok:

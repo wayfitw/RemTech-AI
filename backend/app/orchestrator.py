@@ -8,7 +8,7 @@ import base64
 from datetime import datetime
 from typing import Awaitable, Callable
 
-from agent.registry import needs_confirm
+from agent.registry import needs_confirm, role_can_use_tool
 from agent.registry import status_label as _tool_label
 from agent.tools import TOOLS
 from app import repositories as repo
@@ -229,6 +229,10 @@ class Orchestrator:
             {"type": "text", "text": f"Сейчас: {datetime.now().strftime('%d.%m.%Y %H:%M, %A')}"},
         ]
         tools = TOOLS if tool_names is None else [t for t in TOOLS if t.get("name") in tool_names]
+        # #35 — пер-инструментный RBAC: роль без доступа не видит инструмент вовсе.
+        # roles=None → админ (полный доступ); иначе первая роль пользователя.
+        user_role = "admin" if roles is None else (roles[0] if roles else "user")
+        tools = [t for t in tools if role_can_use_tool(user_role, t.get("name", ""))]
         cached_tools = list(tools)
         if cached_tools:
             last = dict(cached_tools[-1]); last["cache_control"] = {"type": "ephemeral"}
@@ -319,6 +323,28 @@ class Orchestrator:
             if name == "read_url":
                 text = await asyncio.to_thread(websearch.read_url, params["url"])
                 return _wrap_untrusted("веб-страница", text)
+
+            if name == "search_tenders":
+                from services import tenders
+                try:
+                    rows = await asyncio.to_thread(
+                        tenders.search_tenders,
+                        params.get("keywords", ""), params.get("region", ""),
+                        params.get("customer", ""), params.get("budget_min"),
+                        params.get("budget_max"))
+                except tenders.TenderSourceError as e:
+                    return f"Источник закупок (ЕИС) недоступен: {e}. Повтори попытку позже."
+                if not rows:
+                    return "По заданным критериям закупок на ЕИС не найдено."
+                lines = []
+                for r in rows:
+                    price = f"{r['price']:,.0f} ₽".replace(",", " ") if r.get("price") else "не указана"
+                    lines.append(
+                        f"№{r['number']} — {r['name']}\n"
+                        f"  Заказчик: {r['customer'] or '—'} | НМЦК: {price} | "
+                        f"Срок: {r['deadline'] or '—'}\n  {r['link']}")
+                body = f"Найдено закупок: {len(rows)}\n\n" + "\n\n".join(lines)
+                return _wrap_untrusted("ЕИС zakupki.gov.ru", body)
 
             if name == "search_knowledge_base":
                 from app import kb
