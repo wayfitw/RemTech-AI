@@ -133,6 +133,58 @@ def apply_filters(items: list[Tender], region: str = "", customer: str = "",
     return res
 
 
+@dataclass
+class ProcurementCard:
+    subject: str
+    customer: str
+    price: float | None
+    deadline: str
+    requirements: str        # текст блока требований к участникам (как в источнике)
+    link: str
+    missing: list[str]       # какие поля не удалось извлечь (не выдумываем)
+
+
+_SUBJECT_RE = re.compile(
+    r"(?:Наименование объекта закупки|Предмет(?: контракта| закупки)?|Объект закупки)"
+    r"[:\s]*(.+?)(?:\n|Заказчик|Начальн|$)", re.IGNORECASE | re.DOTALL)
+_REQ_RE = re.compile(
+    r"Требовани[яе] к участникам[^:]*[:\s]*(.+?)"
+    r"(?:\n\s*\n|Дата|Срок подачи|Обеспечение|Порядок|$)", re.IGNORECASE | re.DOTALL)
+
+
+def extract_procurement(text: str, link: str = "") -> ProcurementCard:
+    """Извлекает из текста карточки/извещения ЕИС предмет, заказчика, НМЦК, срок и
+    блок требований к участникам. Не найденные поля попадают в missing (без
+    домысливания). Работает и по тексту страницы-извещения, и по переданной карточке."""
+    def _first(rx, flags=re.IGNORECASE | re.DOTALL):
+        m = re.search(rx, text, flags) if isinstance(rx, str) else rx.search(text)
+        return m.group(1).strip() if m else ""
+
+    subj = _first(_SUBJECT_RE)
+    cust = _first(_CUST_RE)
+    pm = _PRICE_RE.search(text)
+    price = _to_price(pm.group(1)) if pm else None
+    dm = _DEADLINE_RE.search(text)
+    deadline = dm.group(1).strip() if dm else ""
+    req = re.sub(r"\s+\n", "\n", _first(_REQ_RE)).strip()
+
+    missing = []
+    if not subj:
+        missing.append("предмет закупки")
+    if not cust:
+        missing.append("заказчик")
+    if price is None:
+        missing.append("НМЦК")
+    if not deadline:
+        missing.append("срок подачи заявок")
+    if not req:
+        missing.append("требования к участникам")
+
+    return ProcurementCard(subject=re.sub(r"\s+", " ", subj), customer=re.sub(r"\s+", " ", cust),
+                           price=price, deadline=deadline, requirements=req,
+                           link=link, missing=missing)
+
+
 def search_tenders(keywords: str, region: str = "", customer: str = "",
                    budget_min: float | None = None, budget_max: float | None = None,
                    fetch=websearch.fetch_raw, limit: int = MAX_RESULTS) -> list[dict]:

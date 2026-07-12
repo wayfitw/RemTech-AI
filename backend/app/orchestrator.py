@@ -346,6 +346,34 @@ class Orchestrator:
                 body = f"Найдено закупок: {len(rows)}\n\n" + "\n\n".join(lines)
                 return _wrap_untrusted("ЕИС zakupki.gov.ru", body)
 
+            if name == "analyze_procurement":
+                from services import tenders
+                link = (params.get("link") or "").strip()
+                text = (params.get("card_text") or "").strip()
+                if link and not text:
+                    page = await asyncio.to_thread(websearch.read_url, link)
+                    if page.startswith(("Ссылка отклонена", "Не удалось")):
+                        return f"Не удалось получить карточку закупки: {page}"
+                    text = page
+                if not text:
+                    return "Нужна ссылка на закупку (ЕИС) или текст карточки для анализа."
+                card = await asyncio.to_thread(tenders.extract_procurement, text, link)
+                lines = [
+                    f"Предмет: {card.subject or '—'}",
+                    f"Заказчик: {card.customer or '—'}",
+                    f"НМЦК: {(str(card.price) + ' ₽') if card.price is not None else '—'}",
+                    f"Срок подачи: {card.deadline or '—'}",
+                    f"Требования к участникам:\n{card.requirements or '—'}",
+                ]
+                if link:
+                    lines.append(f"Источник: {link}")
+                if card.missing:
+                    lines.append("НЕ ХВАТАЕТ ДАННЫХ В КАРТОЧКЕ: " + ", ".join(card.missing) +
+                                 " — не додумывай, укажи это в выводе.")
+                lines.append("Далее: сверь требования с профилем «Ремтехники» через "
+                             "search_knowledge_base и дай честный вердикт соответствия.")
+                return _wrap_untrusted("карточка закупки ЕИС", "\n".join(lines))
+
             if name == "search_knowledge_base":
                 from app import kb
                 from app.embeddings import get_embedder

@@ -25,6 +25,7 @@ TOOL_META: dict[str, tuple[str, str]] = {
     "apply_doc_edits":       ("📝 Редактирую документ...",     "Редактировать документ"),
     "fill_template":         ("📋 Заполняю шаблон...",         "Заполнить шаблон"),
     "search_tenders":        ("📈 Ищу тендеры на ЕИС...",      "Поиск тендеров"),
+    "analyze_procurement":   ("🧾 Анализирую закупку...",      "Анализ закупки"),
 }
 
 
@@ -34,6 +35,7 @@ TOOL_META: dict[str, tuple[str, str]] = {
 # списка для Claude ещё до вызова — модель их «не видит».
 TOOL_ROLES: dict[str, set[str]] = {
     "search_tenders": {"закупки", "руководство"},
+    "analyze_procurement": {"закупки", "руководство"},
 }
 
 
