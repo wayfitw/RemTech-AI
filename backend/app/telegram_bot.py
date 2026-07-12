@@ -36,7 +36,10 @@ class TelegramTransport:
 
     def __init__(self, token: str, client: httpx.AsyncClient | None = None):
         self._base = f"https://api.telegram.org/bot{token}"
-        self._client = client or httpx.AsyncClient(timeout=60.0)
+        # trust_env=False: не использовать системный прокси Windows (VPN-клиент может
+        # включать/выключать 127.0.0.1-прокси, что даёт плавающий ConnectError). До
+        # api.telegram.org ходим напрямую — соединение стабильно без прокси.
+        self._client = client or httpx.AsyncClient(timeout=60.0, trust_env=False)
 
     async def call(self, method: str, payload: dict) -> dict:
         r = await self._client.post(f"{self._base}/{method}", json=payload)
