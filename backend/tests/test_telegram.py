@@ -130,6 +130,24 @@ def test_md_to_tg_html_strips_markdown():
     assert "---" not in out                               # горизонтальная линия убрана
 
 
+async def test_new_command_resets_conversation(session, monkeypatch):
+    """/new сбрасывает текущий диалог — следующий вопрос начинается с чистого листа."""
+    _bind_test_db(monkeypatch)
+    await repo.create_user(session, "buyer", "h$1", role="закупки")
+    await session.commit()
+
+    async def fake_process(*a, **k):
+        pass
+    monkeypatch.setattr(tb.orchestrator, "process", fake_process)
+
+    tx = FakeTransport()
+    bot = TelegramBot(tx, allowmap={777: "buyer"})
+    bot._conv[42] = 999                              # был активный диалог
+    await bot.handle_update({"message": {"chat": {"id": 42}, "from": {"id": 777}, "text": "/new"}})
+    assert 42 not in bot._conv                        # диалог сброшен
+    assert any("новый диалог" in t.lower() for t in tx.sent_texts())
+
+
 async def test_confirmation_callback_resolves(session, monkeypatch):
     _bind_test_db(monkeypatch)
     resolved = {}

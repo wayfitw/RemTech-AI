@@ -156,7 +156,14 @@ class TelegramBot:
         if text in ("/start", "/help"):
             await self._send(chat_id, f"Здравствуйте, {esc(user['name'])}! Я ИИ-ассистент "
                                       "«Ремтехники». Напишите (или наговорите) вопрос по "
-                                      "спецтехнике XCMG, запчастям, КП, сметам или документам.")
+                                      "спецтехнике XCMG, запчастям, КП, сметам, документам "
+                                      "или тендерам.\n\n/new — начать новый диалог.")
+            return
+
+        if text == "/new":
+            self._conv.pop(chat_id, None)
+            self._pending_conv.pop(chat_id, None)
+            await self._send(chat_id, "Начат новый диалог. Задайте вопрос.")
             return
 
         # #34 — голосовой ввод: скачиваем и распознаём тем же ходом (run_turn/STT-хук)
