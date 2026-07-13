@@ -15,7 +15,9 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
+import re
 
 import httpx
 
@@ -29,6 +31,53 @@ log = logging.getLogger("telegram")
 
 _APPROVE = "confirm:approve"
 _REJECT = "confirm:reject"
+
+_HR_RE = re.compile(r"^\s*([-*_])\1{2,}\s*$")           # --- *** ___
+_HEAD_RE = re.compile(r"^\s*#{1,6}\s+(.*)$")            # markdown-заголовок
+_BOLD_RE = re.compile(r"\*\*(.+?)\*\*|__(.+?)__")       # **жирный** / __жирный__
+_BULLET_RE = re.compile(r"^(\s*)[-*]\s+")               # маркер списка
+_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def esc(s: str) -> str:
+    """HTML-экранирование динамического текста для parse_mode=HTML."""
+    return html.escape(s or "", quote=False)
+
+
+def md_to_tg_html(md: str) -> str:
+    """Конвертирует markdown Claude в безопасный Telegram-HTML: заголовки ###/**bold**
+    → <b>, маркеры списка → •, горизонтальные линии убираем. Telegram не рендерит
+    markdown-заголовки — без этого в чат сыпались сырые ### и **."""
+    out = []
+    for raw in (md or "").split("\n"):
+        line = raw.rstrip()
+        if _HR_RE.match(line):
+            continue
+        m = _HEAD_RE.match(line)
+        header = bool(m)
+        content = esc(m.group(1) if m else line)
+        content = _BOLD_RE.sub(lambda x: f"<b>{x.group(1) or x.group(2)}</b>", content)
+        content = _BULLET_RE.sub(r"\1• ", content)
+        out.append(f"<b>{content}</b>" if header else content)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
+
+
+_EXT_RE = re.compile(r"\.(xlsx|xls|docx|doc|pdf|txt|csv|pptx|rtf)$", re.IGNORECASE)
+
+
+def _source_names(sources: list[dict] | None, limit: int = 5) -> list[str]:
+    """Имена документов-источников (#29): дедуп, без расширения, «_»→пробел, лимит."""
+    seen: set[str] = set()
+    names: list[str] = []
+    for s in sources or []:
+        raw = s.get("file_name") or s.get("title") or s.get("source") or ""
+        name = _EXT_RE.sub("", raw).replace("_", " ").strip()
+        if name and name not in seen:
+            seen.add(name)
+            names.append(name)
+    if len(names) > limit:
+        names = names[:limit] + [f"ещё {len(names) - limit}"]
+    return names
 
 
 class TelegramTransport:
@@ -105,7 +154,7 @@ class TelegramBot:
             return
 
         if text in ("/start", "/help"):
-            await self._send(chat_id, f"Здравствуйте, {user['name']}! Я ИИ-ассистент "
+            await self._send(chat_id, f"Здравствуйте, {esc(user['name'])}! Я ИИ-ассистент "
                                       "«Ремтехники». Напишите (или наговорите) вопрос по "
                                       "спецтехнике XCMG, запчастям, КП, сметам или документам.")
             return
@@ -144,7 +193,7 @@ class TelegramBot:
                 self._pending_conv[chat_id] = self._conv.get(chat_id, 0)
                 await self._send(
                     chat_id,
-                    f"Требуется подтверждение: *{event.get('label') or event.get('tool')}*.",
+                    f"Требуется подтверждение: <b>{esc(event.get('label') or event.get('tool') or '')}</b>.",
                     reply_markup={"inline_keyboard": [[
                         {"text": "✅ Подтвердить", "callback_data": _APPROVE},
                         {"text": "❌ Отклонить", "callback_data": _REJECT},
@@ -162,17 +211,11 @@ class TelegramBot:
             await self._send(chat_id, "Внутренняя ошибка обработки запроса. Попробуйте ещё раз.")
             return
 
-        answer = "\n".join(collected).strip() or "Готово."
-        if sources:
-            # источники из оркестратора (#29): {document_id, file_name} — показываем имя документа
-            seen, names = set(), []
-            for s in sources:
-                name = s.get("file_name") or s.get("title") or s.get("source")
-                if name and name not in seen:
-                    seen.add(name)
-                    names.append(name)
-            if names:
-                answer += "\n\n📎 Источники:\n" + "\n".join(f"• {n}" for n in names)
+        answer = md_to_tg_html("\n".join(collected).strip() or "Готово.")
+        names = _source_names(sources)
+        if names:
+            # компактно: одна строка, имена без расширений, через середину, курсивом
+            answer += "\n\n📎 <i>" + esc(" · ".join(names)) + "</i>"
         await self._send(chat_id, answer)
 
     # ── ответ на кнопку подтверждения ────────────────────────────────────────
@@ -189,14 +232,15 @@ class TelegramBot:
 
     # ── транспортные помощники ───────────────────────────────────────────────
     async def _send(self, chat_id: int, text: str, reply_markup: dict | None = None) -> None:
-        payload = {"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}
+        payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
         if reply_markup:
             payload["reply_markup"] = reply_markup
         try:
             await self.tx.call("sendMessage", payload)
         except Exception:
-            # Markdown мог сломаться на спецсимволах — повтор без разметки
+            # HTML мог сломаться на разметке — повтор чистым текстом без тегов
             payload.pop("parse_mode", None)
+            payload["text"] = _TAG_RE.sub("", text)
             await self.tx.call("sendMessage", payload)
 
     async def _chat_action(self, chat_id: int, action: str) -> None:

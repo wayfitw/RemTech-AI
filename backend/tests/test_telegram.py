@@ -113,9 +113,21 @@ async def test_sources_show_document_names(monkeypatch):
     await bot._run_turn(1, {"user_id": 1, "name": "X", "role": "admin"}, "вопрос")
 
     sent = "\n".join(tx.sent_texts())
-    assert "STOK_LiuGong.xlsx" in sent and "Прайс_2025.pdf" in sent
-    assert "• источник\n" not in sent and not sent.endswith("• источник")
-    assert sent.count("STOK_LiuGong.xlsx") == 1          # дубли схлопнуты
+    # компактно: без расширений, «_»→пробел, одной строкой с 📎
+    assert "STOK LiuGong" in sent and "Прайс 2025" in sent
+    assert "источник" not in sent                        # заглушки больше нет
+    assert "📎" in sent and sent.count("STOK LiuGong") == 1   # дубли схлопнуты
+
+
+def test_md_to_tg_html_strips_markdown():
+    from app.telegram_bot import md_to_tg_html
+    src = "### 🏢 Заголовок\n\nЭто **важно** и *курсив*.\n\n---\n\n- пункт один\n- пункт два"
+    out = md_to_tg_html(src)
+    assert "###" not in out and "**" not in out          # сырого markdown нет
+    assert "<b>🏢 Заголовок</b>" in out                   # заголовок → жирный
+    assert "<b>важно</b>" in out                          # **bold** → <b>
+    assert "• пункт один" in out                          # маркеры списка → •
+    assert "---" not in out                               # горизонтальная линия убрана
 
 
 async def test_confirmation_callback_resolves(session, monkeypatch):
