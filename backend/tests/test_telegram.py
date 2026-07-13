@@ -130,6 +130,22 @@ def test_md_to_tg_html_strips_markdown():
     assert "---" not in out                               # горизонтальная линия убрана
 
 
+async def test_start_greets_with_telegram_name(session, monkeypatch):
+    """/start подставляет имя из профиля Telegram (first_name), а не из учётки."""
+    _bind_test_db(monkeypatch)
+    await repo.create_user(session, "buyer", "h$1", full_name="Пётр Учёткин", role="закупки")
+    await session.commit()
+
+    tx = FakeTransport()
+    bot = TelegramBot(tx, allowmap={777: "buyer"})
+    await bot.handle_update({"message": {"chat": {"id": 42},
+                                         "from": {"id": 777, "first_name": "Кирилл"},
+                                         "text": "/start"}})
+    greeting = tx.sent_texts()[0]
+    assert "Кирилл" in greeting          # имя из Telegram
+    assert "Учёткин" not in greeting      # не имя учётной записи
+
+
 async def test_new_command_resets_conversation(session, monkeypatch):
     """/new сбрасывает текущий диалог — следующий вопрос начинается с чистого листа."""
     _bind_test_db(monkeypatch)

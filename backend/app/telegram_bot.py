@@ -139,7 +139,8 @@ class TelegramBot:
         if not msg:
             return
         chat_id = msg["chat"]["id"]
-        tg_id = (msg.get("from") or {}).get("id")
+        frm = msg.get("from") or {}
+        tg_id = frm.get("id")
         text = (msg.get("text") or "").strip()
         voice = msg.get("voice") or msg.get("audio")   # #34 — голосовое/аудио
         if not text and not voice:
@@ -154,7 +155,9 @@ class TelegramBot:
             return
 
         if text in ("/start", "/help"):
-            await self._send(chat_id, f"Здравствуйте, {esc(user['name'])}! Я ИИ-ассистент "
+            # имя из профиля Telegram (first_name), фолбэк — имя учётной записи
+            name = (frm.get("first_name") or "").strip() or user["name"]
+            await self._send(chat_id, f"Здравствуйте, {esc(name)}! Я ИИ-ассистент "
                                       "«Ремтехники». Напишите (или наговорите) вопрос по "
                                       "спецтехнике XCMG, запчастям, КП, сметам, документам "
                                       "или тендерам.\n\n/new — начать новый диалог.")
