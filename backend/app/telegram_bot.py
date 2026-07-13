@@ -164,8 +164,15 @@ class TelegramBot:
 
         answer = "\n".join(collected).strip() or "Готово."
         if sources:
-            lines = "\n".join(f"• {s.get('title') or s.get('source') or 'источник'}" for s in sources)
-            answer += "\n\n📎 Источники:\n" + lines
+            # источники из оркестратора (#29): {document_id, file_name} — показываем имя документа
+            seen, names = set(), []
+            for s in sources:
+                name = s.get("file_name") or s.get("title") or s.get("source")
+                if name and name not in seen:
+                    seen.add(name)
+                    names.append(name)
+            if names:
+                answer += "\n\n📎 Источники:\n" + "\n".join(f"• {n}" for n in names)
         await self._send(chat_id, answer)
 
     # ── ответ на кнопку подтверждения ────────────────────────────────────────

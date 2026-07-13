@@ -95,6 +95,29 @@ async def test_inactive_user_rejected(session, monkeypatch):
     assert any("администратору" in t for t in tx.sent_texts())
 
 
+async def test_sources_show_document_names(monkeypatch):
+    """#29/#31 — источники в Telegram выводятся именами документов, с дедупом,
+    а не заглушкой «источник» (регресс)."""
+    async def fake_run_turn(user, cid, text, files, agent, emit, **kw):
+        await emit({"type": "done", "text": "Вот ответ."})
+        await emit({"type": "sources", "items": [
+            {"document_id": 1, "file_name": "STOK_LiuGong.xlsx"},
+            {"document_id": 1, "file_name": "STOK_LiuGong.xlsx"},   # дубль → схлопнуть
+            {"document_id": 2, "file_name": "Прайс_2025.pdf"},
+        ]})
+        return 5
+    monkeypatch.setattr(tb, "run_turn", fake_run_turn)
+
+    tx = FakeTransport()
+    bot = TelegramBot(tx, allowmap={})
+    await bot._run_turn(1, {"user_id": 1, "name": "X", "role": "admin"}, "вопрос")
+
+    sent = "\n".join(tx.sent_texts())
+    assert "STOK_LiuGong.xlsx" in sent and "Прайс_2025.pdf" in sent
+    assert "• источник\n" not in sent and not sent.endswith("• источник")
+    assert sent.count("STOK_LiuGong.xlsx") == 1          # дубли схлопнуты
+
+
 async def test_confirmation_callback_resolves(session, monkeypatch):
     _bind_test_db(monkeypatch)
     resolved = {}
