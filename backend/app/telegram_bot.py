@@ -46,6 +46,15 @@ class TelegramTransport:
         r.raise_for_status()
         return r.json()
 
+    async def get_file_bytes(self, file_id: str) -> bytes:
+        """Скачивает файл Telegram (голосовое/аудио) по file_id (#34)."""
+        info = await self.call("getFile", {"file_id": file_id})
+        path = info["result"]["file_path"]
+        base = self._base.replace("/bot", "/file/bot")
+        r = await self._client.get(f"{base}/{path}")
+        r.raise_for_status()
+        return r.content
+
     async def aclose(self) -> None:
         await self._client.aclose()
 
@@ -83,7 +92,8 @@ class TelegramBot:
         chat_id = msg["chat"]["id"]
         tg_id = (msg.get("from") or {}).get("id")
         text = (msg.get("text") or "").strip()
-        if not text:
+        voice = msg.get("voice") or msg.get("audio")   # #34 — голосовое/аудио
+        if not text and not voice:
             return
 
         user = await self.resolve_user(tg_id)
@@ -96,14 +106,26 @@ class TelegramBot:
 
         if text in ("/start", "/help"):
             await self._send(chat_id, f"Здравствуйте, {user['name']}! Я ИИ-ассистент "
-                                      "«Ремтехники». Напишите вопрос по спецтехнике XCMG, "
-                                      "запчастям, КП, сметам или документам.")
+                                      "«Ремтехники». Напишите (или наговорите) вопрос по "
+                                      "спецтехнике XCMG, запчастям, КП, сметам или документам.")
             return
 
-        await self._run_turn(chat_id, user, text)
+        # #34 — голосовой ввод: скачиваем и распознаём тем же ходом (run_turn/STT-хук)
+        audio = None
+        if voice and not text:
+            await self._chat_action(chat_id, "typing")
+            try:
+                audio = await self.tx.get_file_bytes(voice["file_id"])
+            except Exception:
+                log.exception("voice download failed chat=%s", chat_id)
+                await self._send(chat_id, "Не удалось получить голосовое сообщение.")
+                return
+
+        await self._run_turn(chat_id, user, text, audio=audio)
 
     # ── прогон хода через общее ядро ─────────────────────────────────────────
-    async def _run_turn(self, chat_id: int, user: dict, text: str) -> None:
+    async def _run_turn(self, chat_id: int, user: dict, text: str,
+                        audio: bytes | None = None) -> None:
         await self._chat_action(chat_id, "typing")
         collected: list[str] = []
         sources: list[dict] = []
@@ -132,7 +154,8 @@ class TelegramBot:
                 collected.append("⚠️ " + event.get("text", "Ошибка"))
 
         try:
-            cid = await run_turn(user, self._conv.get(chat_id), text, [], None, emit)
+            cid = await run_turn(user, self._conv.get(chat_id), text, [], None, emit,
+                                 audio=audio, audio_mime="audio/ogg")
             self._conv[chat_id] = cid
         except Exception:
             log.exception("telegram turn failed chat=%s", chat_id)

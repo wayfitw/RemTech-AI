@@ -5,6 +5,8 @@
 получал ответ пользователя на запрос подтверждения (issue #30).
 """
 import asyncio
+import base64
+import binascii
 import json
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -43,8 +45,17 @@ async def ws_chat(ws: WebSocket):
     async def guarded_turn(msg: dict):
         # #15 — причину логируем на сервере, клиенту отдаём обобщённо
         try:
+            # #34 — голосовой ввод: аудио приходит как base64 (audio_b64/audio_mime)
+            audio = None
+            if msg.get("audio_b64"):
+                try:
+                    audio = base64.b64decode(msg["audio_b64"])
+                except (ValueError, binascii.Error):
+                    await emit({"type": "error", "text": "Некорректные аудио-данные"})
+                    return
             await run_turn(user, msg.get("conversation_id"), msg.get("text", ""),
-                           msg.get("file_ids", []), msg.get("agent_id"), emit)
+                           msg.get("file_ids", []), msg.get("agent_id"), emit,
+                           audio=audio, audio_mime=msg.get("audio_mime", ""))
         except Exception:
             log.exception("turn failed uid=%s", uid)
             try:

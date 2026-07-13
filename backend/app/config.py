@@ -60,9 +60,16 @@ class Settings(BaseSettings):
     kb_top_k: int = 5
     kb_async_ingest: bool = False    # True → ингест через Celery-воркер (issue #22)
 
-    # ── Голос (EPIC-10, issue #32) — в вебе выключено; STT=Whisper, TTS=Silero (2b) ──
+    # ── Голос (EPIC-10, issue #32/#34) — в вебе выключено; STT=Whisper, TTS=Silero ──
     stt_enabled: bool = False
     tts_enabled: bool = False
+    # Issue #34 — локальный STT. backend: null (заглушка) | whisper (faster-whisper).
+    # Модель local, без egress: держит голос/ПДн в контуре (ADR-010/011).
+    stt_backend: str = "null"
+    stt_model: str = "small"          # tiny|base|small|medium|large-v3 (баланс CPU/качество)
+    stt_language: str = "ru"          # язык распознавания (пусто → автоопределение)
+    stt_device: str = "cpu"           # cpu | cuda
+    stt_compute_type: str = "int8"    # int8 (CPU) | float16 (GPU)
     # Лимит извлечения текста для ингеста БЗ: длинные договоры/КП не режем на 20k (аудит БЗ)
     kb_extract_max_chars: int = 200_000
 

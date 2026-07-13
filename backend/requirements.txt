@@ -24,3 +24,7 @@ pgvector==0.3.6
 celery[redis]==5.4.0
 redis==5.2.1
 
+
+# Голосовой ввод (EPIC-10, issue #34) — локальный STT на CTranslate2, CPU/GPU.
+# Модель качается при первом запуске; голос не покидает контур (ADR-010/011).
+faster-whisper==1.0.3

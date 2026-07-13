@@ -43,9 +43,13 @@ async def run_turn(user: dict, conversation_id, text: str, file_ids, agent_id, e
     Возвращает conversation_id (может быть создан новый). Канал-независимо."""
     uid = user["user_id"]
 
-    # #32 — опциональный STT-хук: голосовой ввод → текст (в вебе выключен)
+    # #32/#34 — опциональный STT-хук: голосовой ввод → текст (по умолчанию выключен)
     if audio and not (text or "").strip():
         text = await maybe_transcribe(audio, audio_mime)
+        if not (text or "").strip():
+            # битое/пустое аудио или STT выключен — честный отказ, ход не падает (#34)
+            await emit({"type": "error", "text": "Не удалось распознать голосовое сообщение."})
+            return conversation_id
 
     async with SessionLocal() as s:
         if not conversation_id:
