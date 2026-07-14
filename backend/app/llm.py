@@ -5,13 +5,13 @@
 на fallback. Пока реализован провайдер Anthropic (через прямой API или
 обратный прокси egress_proxy_url); Gemini/OpenAI/Yandex/vLLM — в стадии 2b.
 """
+from dataclasses import dataclass
 from typing import Awaitable, Callable
 
 import anthropic
 
 from app import repositories as repo
 from app.config import get_settings
-from app.database import SessionLocal
 from app.logging_config import get_logger
 
 settings = get_settings()
@@ -51,37 +51,50 @@ def make_provider(provider: str, model: str):
         f"Настройте агента на доступный провайдер (anthropic).")
 
 
-async def _load_config(alias: str):
-    async with SessionLocal() as s:
-        return await repo.get_model_config_by_alias(s, alias)
+@dataclass
+class ModelRoute:
+    """Разрешённый маршрут модели: основной провайдер/модель + опциональный fallback."""
+    provider: str
+    model: str
+    fallback_provider: str | None = None
+    fallback_model: str | None = None
+
+
+async def resolve_route(s, alias: str | None) -> ModelRoute:
+    """Резолвит маршрут по алиасу из model_configs. Сессию передаёт вызывающий слой —
+    сам шлюз БД не открывает (issue #18: не течём в чужой слой)."""
+    alias = alias or settings.default_model
+    cfg = await repo.get_model_config_by_alias(s, alias)
+    provider = cfg.provider if cfg else "anthropic"
+    model = cfg.endpoint if cfg and cfg.endpoint else settings.model
+    fb_provider = fb_model = None
+    if cfg and cfg.fallback_to:
+        fb = await repo.get_model_config_by_alias(s, cfg.fallback_to)
+        if fb:
+            fb_provider = fb.provider
+            fb_model = fb.endpoint or settings.model
+    return ModelRoute(provider, model, fb_provider, fb_model)
 
 
 class ModelGateway:
-    async def run(self, alias: str | None, system, tools, messages, on_delta: OnDelta):
-        """Маршрутизирует запрос: основной провайдер по алиасу (или дефолт),
-        при сбое — fallback из model_configs."""
-        alias = alias or settings.default_model
-        cfg = await _load_config(alias)
-        provider_name = cfg.provider if cfg else "anthropic"
-        model = (cfg.endpoint if cfg and cfg.endpoint else settings.model)
-        fallback = cfg.fallback_to if cfg else None
-
+    async def run(self, route: ModelRoute, system, tools, messages, on_delta: OnDelta):
+        """Выполняет запрос по готовому маршруту: основной провайдер, при сбое —
+        fallback. БД не трогает (маршрут уже разрешён вызывающим слоем)."""
         try:
-            return await make_provider(provider_name, model).run(system, tools, messages, on_delta)
+            return await make_provider(route.provider, route.model).run(
+                system, tools, messages, on_delta)
         except Exception as primary:
-            # #15/#21 — не глотаем первопричину: логируем и, если fallback недоступен,
-            # пробрасываем именно ИСХОДНУЮ ошибку основного провайдера.
-            log.warning("provider '%s' failed: %s: %s", provider_name,
+            # #15/#21 — не глотаем первопричину: при недоступном fallback пробрасываем
+            # именно ИСХОДНУЮ ошибку основного провайдера.
+            log.warning("provider '%s' failed: %s: %s", route.provider,
                         type(primary).__name__, primary)
-            fb = await _load_config(fallback) if fallback else None
-            if fb:
+            if route.fallback_provider:
                 try:
-                    log.info("switching to fallback '%s'", fallback)
-                    return await make_provider(
-                        fb.provider, fb.endpoint or settings.model
-                    ).run(system, tools, messages, on_delta)
+                    log.info("switching to fallback provider '%s'", route.fallback_provider)
+                    return await make_provider(route.fallback_provider, route.fallback_model).run(
+                        system, tools, messages, on_delta)
                 except Exception as fb_err:
-                    log.warning("fallback '%s' unavailable: %s: %s", fallback,
+                    log.warning("fallback '%s' unavailable: %s: %s", route.fallback_provider,
                                 type(fb_err).__name__, fb_err)
             raise primary
 

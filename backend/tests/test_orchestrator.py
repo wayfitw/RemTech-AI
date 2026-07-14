@@ -157,8 +157,9 @@ class _RecGateway:
     def __init__(self):
         self.calls = []
 
-    async def run(self, alias, system, tools, messages, on_delta):
-        self.calls.append({"alias": alias, "tools": [t.get("name") for t in tools],
+    async def run(self, route, system, tools, messages, on_delta):
+        self.calls.append({"model": route.model, "provider": route.provider,
+                           "tools": [t.get("name") for t in tools],
                            "system_text": system[0]["text"]})
         return _Final("ок")
 
@@ -184,7 +185,7 @@ async def test_process_uses_agent_config(session, monkeypatch):
 
     await orch.Orchestrator().process(conv.id, user.id, "сделай КП", [], emit, ["user"], agent.id)
     call = gw.calls[0]
-    assert call["alias"] == "claude"  # модель агента
+    assert call["model"] == "claude-sonnet-4-6"  # модель агента (endpoint из его model_config)
     assert set(call["tools"]) == {"search_knowledge_base", "create_proposal"}  # только его инструменты
     assert "менеджер по продажам" in call["system_text"]  # его промпт
     await engine.dispose()

@@ -44,10 +44,18 @@ class _Stub:
         return self.result
 
 
+async def test_resolve_route_reads_config(session):
+    # #18 — resolve_route берёт маршрут из БД по переданной сессии (шлюз БД не трогает)
+    await repo.create_model_config(session, "claude-fast", "anthropic", "claude-haiku")
+    await repo.create_model_config(session, "claude", "anthropic", "claude-sonnet",
+                                   fallback_to="claude-fast")
+    await session.commit()
+    route = await llm.resolve_route(session, "claude")
+    assert route.provider == "anthropic" and route.model == "claude-sonnet"
+    assert route.fallback_provider == "anthropic" and route.fallback_model == "claude-haiku"
+
+
 async def test_gateway_default_provider(monkeypatch):
-    async def fake_load(alias):
-        return None  # нет конфига → дефолтный anthropic
-    monkeypatch.setattr(llm, "_load_config", fake_load)
     stub = _Stub("final")
     monkeypatch.setattr(llm, "make_provider", lambda provider, model: stub)
 
@@ -55,20 +63,12 @@ async def test_gateway_default_provider(monkeypatch):
     async def on_delta(c):
         chunks.append(c)
 
-    res = await llm.gateway.run(None, "sys", [], [], on_delta)
+    route = llm.ModelRoute("anthropic", "claude-x")
+    res = await llm.gateway.run(route, "sys", [], [], on_delta)
     assert res == "final" and chunks == ["chunk"] and stub.calls == 1
 
 
 async def test_gateway_fallback_on_failure(monkeypatch):
-    class Cfg:
-        provider, endpoint, fallback_to = "anthropic", "claude-x", "yandex"
-    class Fb:
-        provider, endpoint, fallback_to = "anthropic", "claude-y", None
-
-    async def fake_load(alias):
-        return Fb() if alias == "yandex" else Cfg()
-    monkeypatch.setattr(llm, "_load_config", fake_load)
-
     primary, fallback = _Stub(fail=True), _Stub("fb-result")
     monkeypatch.setattr(llm, "make_provider",
                         lambda provider, model: fallback if model == "claude-y" else primary)
@@ -76,7 +76,8 @@ async def test_gateway_fallback_on_failure(monkeypatch):
     async def on_delta(c):
         pass
 
-    res = await llm.gateway.run(None, "sys", [], [], on_delta)
+    route = llm.ModelRoute("anthropic", "claude-x", "anthropic", "claude-y")
+    res = await llm.gateway.run(route, "sys", [], [], on_delta)
     assert res == "fb-result"
     assert primary.calls == 1 and fallback.calls == 1
 
@@ -84,15 +85,6 @@ async def test_gateway_fallback_on_failure(monkeypatch):
 async def test_gateway_reraises_primary_when_fallback_unavailable(monkeypatch):
     # #21 — если fallback-провайдер не реализован, наружу идёт ИСХОДНАЯ ошибка,
     # а не NotImplementedError, маскирующий первопричину.
-    class Cfg:
-        provider, endpoint, fallback_to = "anthropic", "claude-x", "yandex"
-    class Fb:
-        provider, endpoint, fallback_to = "yandex", "y-model", None
-
-    async def fake_load(alias):
-        return Fb() if alias == "yandex" else Cfg()
-    monkeypatch.setattr(llm, "_load_config", fake_load)
-
     def make(provider, model):
         if provider == "yandex":
             raise NotImplementedError("yandex не реализован (стадия 2b)")
@@ -102,5 +94,6 @@ async def test_gateway_reraises_primary_when_fallback_unavailable(monkeypatch):
     async def on_delta(c):
         pass
 
+    route = llm.ModelRoute("anthropic", "claude-x", "yandex", "y-model")
     with pytest.raises(RuntimeError, match="provider down"):
-        await llm.gateway.run(None, "sys", [], [], on_delta)
+        await llm.gateway.run(route, "sys", [], [], on_delta)
