@@ -1,8 +1,8 @@
 """Роутер авторизации: health, статус регистрации, регистрация, вход, профиль."""
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import auth
+from app import auth, cookies
 from app import repositories as repo
 from app.database import get_db
 from app.deps import (
@@ -29,7 +29,8 @@ async def api_auth_status(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/api/register")
-async def api_register(req: RegisterReq, request: Request, db: AsyncSession = Depends(get_db)):
+async def api_register(req: RegisterReq, request: Request, response: Response,
+                       db: AsyncSession = Depends(get_db)):
     if not _register_limiter.allow(_client_ip(request)):
         raise HTTPException(429, "Слишком много попыток регистрации. Повторите позже.")
     if not await auth.registration_open(db):
@@ -41,11 +42,14 @@ async def api_register(req: RegisterReq, request: Request, db: AsyncSession = De
     if u:
         await repo.log_activity(db, u.id, "register", "Регистрация администратора")
     await db.commit()
-    return {"token": token}
+    csrf = cookies.issue_csrf()               # #4 — токен в httpOnly-cookie + CSRF
+    cookies.set_auth_cookies(response, token, csrf)
+    return {"token": token, "csrf": csrf}
 
 
 @router.post("/api/login")
-async def api_login(req: LoginReq, request: Request, db: AsyncSession = Depends(get_db)):
+async def api_login(req: LoginReq, request: Request, response: Response,
+                    db: AsyncSession = Depends(get_db)):
     ip = _client_ip(request)
     uname = (req.username or "").strip()
     if not _login_limiter.allow(f"{ip}:{uname}"):
@@ -64,7 +68,9 @@ async def api_login(req: LoginReq, request: Request, db: AsyncSession = Depends(
     if u:
         await repo.log_activity(db, u.id, "login", "Вход в систему")
     await db.commit()
-    return {"token": token}
+    csrf = cookies.issue_csrf()               # #4 — токен в httpOnly-cookie + CSRF
+    cookies.set_auth_cookies(response, token, csrf)
+    return {"token": token, "csrf": csrf}
 
 
 @router.get("/api/me")
@@ -73,12 +79,14 @@ async def api_me(user: dict = Depends(current_user)):
 
 
 @router.post("/api/logout")
-async def api_logout(user: dict = Depends(current_user), db: AsyncSession = Depends(get_db)):
-    """Issue #4 — серверный выход: отзываем все токены пользователя (сдвиг версии),
-    так что даже перехваченный токен перестаёт действовать сразу, а не до истечения."""
+async def api_logout(response: Response, user: dict = Depends(current_user),
+                     db: AsyncSession = Depends(get_db)):
+    """Issue #4 — серверный выход: отзываем все токены пользователя (сдвиг версии) и
+    чистим httpOnly-cookie, так что даже перехваченный токен перестаёт действовать сразу."""
     await repo.revoke_tokens(db, user["user_id"])
     await repo.log_activity(db, user["user_id"], "logout", "Выход из системы")
     await db.commit()
+    cookies.clear_auth_cookies(response)
     return {"ok": True}
 
 

@@ -6,9 +6,11 @@
 """
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
+from app import cookies
 from app import repositories as repo
 from app.config import get_settings
 from app.database import SessionLocal, init_extensions
@@ -54,6 +56,21 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# #4 — CSRF-защита при cookie-аутентификации (double-submit). Bearer-запросы
+# (API-клиенты) не требуют CSRF: заголовок Authorization кросс-сайтом не подделать.
+_CSRF_EXEMPT = {"/api/login", "/api/register", "/api/auth/status", "/api/health"}
+
+
+@app.middleware("http")
+async def _csrf_guard(request: Request, call_next):
+    if request.method in ("POST", "PUT", "PATCH", "DELETE") and request.url.path not in _CSRF_EXEMPT:
+        has_bearer = request.headers.get("authorization", "").lower().startswith("bearer ")
+        has_cookie = request.cookies.get(settings.auth_cookie_name)
+        if has_cookie and not has_bearer and not cookies.csrf_ok(request):
+            return JSONResponse({"detail": "CSRF проверка не пройдена"}, status_code=403)
+    return await call_next(request)
+
 
 for _router in (auth.router, chat.router, files.router, admin.router, kb.router, ws.router):
     app.include_router(_router)

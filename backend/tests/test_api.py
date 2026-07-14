@@ -295,3 +295,34 @@ async def test_deactivation_revokes_token(client):
     assert (await client.post(f"/api/admin/users/{uid}/active?active=false",
             headers=_auth(admin))).status_code == 200
     assert (await client.get("/api/me", headers=_auth(utoken))).status_code == 401
+
+
+# ── Issue #4 — httpOnly-cookie для токена + CSRF (double-submit) ───────────────
+
+async def test_cookie_auth_without_header(client):
+    # register кладёт токен в httpOnly-cookie; последующий GET авторизуется по cookie
+    r = await client.post("/api/register", json={"username": "director", "password": "pass1234"})
+    assert r.status_code == 200 and "csrf" in r.json()
+    setck = r.headers.get_list("set-cookie")
+    assert any("rt_access=" in c and "HttpOnly" in c for c in setck)   # access — httpOnly
+    me = await client.get("/api/me")            # без заголовка Authorization — по cookie
+    assert me.status_code == 200 and me.json()["username"] == "director"
+
+
+async def test_csrf_required_for_cookie_mutations(client):
+    csrf = (await client.post("/api/register",
+            json={"username": "director", "password": "pass1234"})).json()["csrf"]
+    # мутация по cookie БЕЗ CSRF-заголовка → 403
+    assert (await client.post("/api/logout")).status_code == 403
+    # с корректным CSRF-заголовком → 200
+    assert (await client.post("/api/logout", headers={"X-CSRF-Token": csrf})).status_code == 200
+    # после logout cookie очищена → доступа нет
+    assert (await client.get("/api/me")).status_code == 401
+
+
+async def test_bearer_requests_bypass_csrf(client):
+    # API-клиент по Bearer-заголовку не обязан слать CSRF (заголовок кросс-сайтом не подделать)
+    token = (await client.post("/api/register",
+             json={"username": "director", "password": "pass1234"})).json()["token"]
+    r = await client.post("/api/logout", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200

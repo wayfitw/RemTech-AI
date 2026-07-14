@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, getToken, logout, openSocket, fileBlobUrl, downloadFile } from "./api.js";
+import { api, isAuthed, logout, openSocket, fileBlobUrl, downloadFile } from "./api.js";
 import { confirmDialog } from "./Dialog.jsx";
 import { Toaster, toast } from "sonner";
 import AdminPanel from "./AdminPanel.jsx";
@@ -24,10 +24,11 @@ async function clearAppCache() {
     confirmText: "Очистить",
   });
   if (!ok) return;
-  const token = localStorage.getItem("token");
+  // #4 — токен в httpOnly-cookie; сохраняем UX-флаг входа и тему, остальное чистим
+  const authed = localStorage.getItem("rt_authed");
   const theme = localStorage.getItem("theme");
   localStorage.clear();
-  if (token) localStorage.setItem("token", token);
+  if (authed) localStorage.setItem("rt_authed", authed);
   if (theme) localStorage.setItem("theme", theme);
   location.reload();
 }
@@ -63,7 +64,7 @@ function ThemeToggle({ theme, onToggle, className = "" }) {
 }
 
 export default function App() {
-  const [authed, setAuthed] = useState(!!getToken());
+  const [authed, setAuthed] = useState(isAuthed());
   const { theme, toggle } = useTheme();
   return (
     <>
@@ -107,11 +108,9 @@ function Login({ onLogin, theme, onToggleTheme }) {
     }
     setBusy(true);
     try {
-      const { token } = isReg
-        ? await api.register(username, password, fullName)
-        : await api.login(username, password);
-      localStorage.setItem("token", token);
-      onLogin();
+      if (isReg) await api.register(username, password, fullName);
+      else await api.login(username, password);
+      onLogin();   // #4 — токен ушёл в httpOnly-cookie, в localStorage не храним
     } catch (err) {
       setError(err.message);
     } finally {

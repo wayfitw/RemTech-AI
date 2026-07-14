@@ -45,11 +45,14 @@ async def _user_from_token(token: str, db: AsyncSession) -> dict | None:
             "name": u.full_name or u.username, "role": u.role}
 
 
-async def current_user(cred: HTTPAuthorizationCredentials = Depends(_bearer),
+async def current_user(request: Request,
+                       cred: HTTPAuthorizationCredentials = Depends(_bearer),
                        db: AsyncSession = Depends(get_db)) -> dict:
-    if not cred:
+    # #4 — токен из заголовка Authorization (API-клиенты) ИЛИ из httpOnly-cookie (браузер)
+    token = cred.credentials if cred else request.cookies.get(settings.auth_cookie_name)
+    if not token:
         raise HTTPException(401, "Не авторизован")
-    user = await _user_from_token(cred.credentials, db)
+    user = await _user_from_token(token, db)
     if not user:
         raise HTTPException(401, "Неверный токен или аккаунт деактивирован")
     return user
