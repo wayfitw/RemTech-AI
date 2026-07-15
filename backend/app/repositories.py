@@ -161,6 +161,18 @@ async def get_last_uploaded(s, conversation_id: int, kind: str) -> UploadedFile 
     )
 
 
+async def list_output_files(s, conversation_id: int) -> list[UploadedFile]:
+    """Сгенерированные файлы беседы (КП/сметы/документы) — чтобы восстановить
+    кнопки скачивания при переоткрытии чата (в истории привязки файла к сообщению нет)."""
+    res = await s.scalars(
+        select(UploadedFile).where(
+            UploadedFile.conversation_id == conversation_id,
+            UploadedFile.direction == "output",
+        ).order_by(UploadedFile.id)
+    )
+    return list(res)
+
+
 # ── Activity log ─────────────────────────────────────────────────────────────
 
 async def log_activity(s, user_id: int | None, action: str, detail: str = "") -> None:

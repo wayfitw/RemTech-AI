@@ -310,14 +310,22 @@ function Chat({ onLogout, theme, onToggleTheme }) {
     setSidebarOpen(false);
     setDraft(null);
     const hist = await api.messages(id);
-    setMessages(
-      hist.map((m) => ({
-        role: m.role,
-        text: extractText(m.content),
-        images: [],
-        docs: [],
-      }))
-    );
+    const msgs = hist.map((m) => ({
+      role: m.role,
+      text: extractText(m.content),
+      images: [],
+      docs: [],
+    }));
+    // восстанавливаем сгенерированные файлы: в истории нет привязки файла к сообщению,
+    // поэтому вешаем их на последний ответ ассистента (кнопки скачивания не теряются)
+    try {
+      const files = await api.conversationFiles(id);
+      if (files.length) {
+        const lastA = [...msgs].reverse().find((m) => m.role === "assistant");
+        if (lastA) lastA.docs = files.map((f) => ({ id: f.id, name: f.name }));
+      }
+    } catch { /* нет файлов — не критично */ }
+    setMessages(msgs);
   }
 
   function newChat() {

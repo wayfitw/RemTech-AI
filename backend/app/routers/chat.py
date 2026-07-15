@@ -59,3 +59,15 @@ async def api_messages(conversation_id: int, user: dict = Depends(current_user),
     if not conv or conv.user_id != user["user_id"]:
         raise HTTPException(404, "Чат не найден")
     return await repo.load_history(db, conversation_id, limit=200)
+
+
+@router.get("/api/conversations/{conversation_id}/files")
+async def api_conversation_files(conversation_id: int, user: dict = Depends(current_user),
+                                 db: AsyncSession = Depends(get_db)):
+    """Сгенерированные файлы беседы — для восстановления кнопок скачивания при
+    переоткрытии чата (в истории нет привязки файла к сообщению)."""
+    conv = await repo.get_conversation(db, conversation_id)
+    if not conv or conv.user_id != user["user_id"]:
+        raise HTTPException(404, "Чат не найден")
+    return [{"id": f.id, "name": f.file_name}
+            for f in await repo.list_output_files(db, conversation_id)]

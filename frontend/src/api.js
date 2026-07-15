@@ -115,6 +115,7 @@ export const api = {
   newConversation: (title) => req("/conversations", { method: "POST", json: { title } }),
   deleteConversation: (id) => req(`/conversations/${id}`, { method: "DELETE" }),
   messages: (id) => req(`/conversations/${id}/messages`),
+  conversationFiles: (id) => req(`/conversations/${id}/files`),
   adminOverview: () => req("/admin/overview"),
   adminUserConversations: (uid) => req(`/admin/users/${uid}/conversations`),
   adminConversationMessages: (cid) => req(`/admin/conversations/${cid}/messages`),
