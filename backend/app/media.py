@@ -128,21 +128,17 @@ class SileroSynthesizer(Synthesizer):
         return self._model
 
     def _run(self, text: str) -> bytes:
+        # Silero пишет WAV своим методом (чистое int16-преобразование — ручная конвертация
+        # тензора давала хрип). put_accent/put_yo — автоударения и ё для правильной речи.
+        import os
+        import tempfile
         model = self._load()
-        audio = model.apply_tts(text=text, speaker=self._speaker, sample_rate=self._sample_rate)
-        # нормализуем громкость к пику 0.97 — тихий сигнал через Opus звучит хрипло
-        peak = float(audio.abs().max())
-        if peak > 1e-4:
-            audio = audio * (0.97 / peak)
-        # torch.FloatTensor [-1,1] → int16 PCM (с округлением) → WAV (без numpy)
-        ints = [max(-32768, min(32767, int(round(x * 32767)))) for x in audio.tolist()]
-        buf = io.BytesIO()
-        with wave.open(buf, "wb") as w:
-            w.setnchannels(1)
-            w.setsampwidth(2)
-            w.setframerate(self._sample_rate)
-            w.writeframes(struct.pack("<%dh" % len(ints), *ints))
-        return buf.getvalue()
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "tts.wav")
+            model.save_wav(text=text, speaker=self._speaker, sample_rate=self._sample_rate,
+                           audio_path=path, put_accent=True, put_yo=True)
+            with open(path, "rb") as f:
+                return f.read()
 
     async def synthesize(self, text: str) -> bytes:
         text = (text or "").strip()
@@ -158,28 +154,34 @@ class SileroSynthesizer(Synthesizer):
 
 def wav_to_ogg_opus(wav: bytes) -> bytes | None:
     """WAV → OGG/Opus для Telegram sendVoice (голосовое сообщение). None при сбое —
-    вызывающий откатывается на sendAudio(WAV). Требует PyAV (уже в зависимостях)."""
+    вызывающий откатывается на sendAudio(WAV). Требует PyAV (уже в зависимостях).
+
+    Канонический транскод: декодируем WAV покадрово и переэнкодируем в Opus. Так
+    кадры корректной длины формирует сам декодер (ручная сборка одного большого
+    AudioFrame давала глитчи/хрип)."""
     try:
         import av
-        with wave.open(io.BytesIO(wav)) as w:
-            rate, nframes = w.getframerate(), w.getnframes()
-            pcm = w.readframes(nframes)
-        out = io.BytesIO()
-        container = av.open(out, mode="w", format="ogg")
-        stream = container.add_stream("libopus", rate=48000)
-        stream.layout = "mono"
-        stream.bit_rate = 96000   # выше дефолта — чище синтезированная речь (#40)
+        inp = av.open(io.BytesIO(wav), format="wav")
+        out_buf = io.BytesIO()
+        out = av.open(out_buf, mode="w", format="ogg")
+        ostream = out.add_stream("libopus", rate=48000)
+        ostream.bit_rate = 96000
         resampler = av.AudioResampler(format="s16", layout="mono", rate=48000)
-        src = av.AudioFrame(format="s16", layout="mono", samples=nframes)
-        src.sample_rate = rate
-        src.planes[0].update(pcm)
-        for frame in resampler.resample(src):
-            for packet in stream.encode(frame):
-                container.mux(packet)
-        for packet in stream.encode(None):   # flush
-            container.mux(packet)
-        container.close()
-        return out.getvalue()
+        try:
+            for frame in inp.decode(audio=0):
+                frame.pts = None
+                for rframe in resampler.resample(frame):
+                    for packet in ostream.encode(rframe):
+                        out.mux(packet)
+            for rframe in resampler.resample(None):   # слить хвост ресемплера
+                for packet in ostream.encode(rframe):
+                    out.mux(packet)
+            for packet in ostream.encode(None):        # слить энкодер
+                out.mux(packet)
+        finally:
+            out.close()
+            inp.close()
+        return out_buf.getvalue()
     except Exception as e:
         log.info("ogg-энкодер недоступен, откат на sendAudio: %s", type(e).__name__)
         return None
