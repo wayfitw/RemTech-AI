@@ -34,3 +34,4 @@ faster-whisper==1.2.1
 # Голосовые ответы (EPIC-10, issue #40) — локальный TTS Silero через torch.hub.
 # CPU-версия torch; модель качается при первом синтезе; голос не покидает контур.
 torch>=2.6
+omegaconf>=2.3   # конфиг для Silero TTS (torch.hub)

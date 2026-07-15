@@ -122,7 +122,7 @@ class SileroSynthesizer(Synthesizer):
                 raise SynthesisError("torch не установлен (pip install torch)") from e
             log.info("loading silero tts model=%s speaker=%s", self._model_id, self._speaker)
             model, _ = torch.hub.load("snakers4/silero-models", "silero_tts",
-                                      language="ru", speaker=self._model_id)
+                                      language="ru", speaker=self._model_id, trust_repo=True)
             model.to(self._device)
             self._model = model
         return self._model
