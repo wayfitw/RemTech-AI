@@ -59,7 +59,7 @@ app.add_middleware(
 
 # #4 — CSRF-защита при cookie-аутентификации (double-submit). Bearer-запросы
 # (API-клиенты) не требуют CSRF: заголовок Authorization кросс-сайтом не подделать.
-_CSRF_EXEMPT = {"/api/login", "/api/register", "/api/auth/status", "/api/health"}
+_CSRF_EXEMPT = {"/api/login", "/api/register", "/api/refresh", "/api/auth/status", "/api/health"}
 
 
 @app.middleware("http")

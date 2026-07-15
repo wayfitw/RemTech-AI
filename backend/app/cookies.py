@@ -12,23 +12,30 @@ from fastapi import Request, Response
 from app.config import get_settings
 
 settings = get_settings()
-_MAX_AGE = settings.jwt_ttl_hours * 3600
+_ACCESS_AGE = settings.access_ttl_minutes * 60
+_REFRESH_AGE = settings.refresh_ttl_hours * 3600
+_REFRESH_PATH = "/api/refresh"   # refresh-cookie шлётся только на эндпоинт обновления
 
 
 def issue_csrf() -> str:
     return secrets.token_urlsafe(24)
 
 
-def set_auth_cookies(response: Response, token: str, csrf: str) -> None:
-    """access-токен — httpOnly (JS не читает), CSRF — читаемый (double-submit)."""
-    common = {"max_age": _MAX_AGE, "secure": settings.cookie_secure,
-              "samesite": "strict", "path": "/"}
-    response.set_cookie(settings.auth_cookie_name, token, httponly=True, **common)
-    response.set_cookie(settings.csrf_cookie_name, csrf, httponly=False, **common)
+def set_auth_cookies(response: Response, access: str, refresh: str, csrf: str) -> None:
+    """#38 — access (короткий, httpOnly, весь сайт), refresh (долгий, httpOnly, только
+    /api/refresh — меньше поверхность), CSRF (читаемый, double-submit)."""
+    base = {"secure": settings.cookie_secure, "samesite": "strict"}
+    response.set_cookie(settings.auth_cookie_name, access, httponly=True,
+                        max_age=_ACCESS_AGE, path="/", **base)
+    response.set_cookie(settings.refresh_cookie_name, refresh, httponly=True,
+                        max_age=_REFRESH_AGE, path=_REFRESH_PATH, **base)
+    response.set_cookie(settings.csrf_cookie_name, csrf, httponly=False,
+                        max_age=_REFRESH_AGE, path="/", **base)
 
 
 def clear_auth_cookies(response: Response) -> None:
     response.delete_cookie(settings.auth_cookie_name, path="/", samesite="strict")
+    response.delete_cookie(settings.refresh_cookie_name, path=_REFRESH_PATH, samesite="strict")
     response.delete_cookie(settings.csrf_cookie_name, path="/", samesite="strict")
 
 

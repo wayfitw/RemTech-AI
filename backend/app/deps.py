@@ -33,7 +33,7 @@ async def _user_from_token(token: str, db: AsyncSession) -> dict | None:
     """Issue #4 — проверка токена со сверкой active/роли/версии по БД, чтобы
     деактивация, смена роли и отзыв (logout/смена пароля) действовали немедленно,
     а не до истечения JWT."""
-    claims = auth.verify(token or "")
+    claims = auth.verify(token or "", typ="access")   # #38 — refresh как access не принимаем
     if not claims:
         return None
     u = await repo.get_user(db, claims["user_id"])

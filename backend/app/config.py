@@ -24,12 +24,16 @@ class Settings(BaseSettings):
 
     # ── auth ─────────────────────────────────────────────────────────────────
     jwt_secret: str = _DEFAULT_JWT
-    jwt_ttl_hours: int = 24    # issue #4 — access-токен (в httpOnly-cookie); TTL 24ч
+    jwt_ttl_hours: int = 24    # совместимость; access/refresh TTL ниже (#38)
+    # #38 — короткий access + долгий refresh с ротацией.
+    access_ttl_minutes: int = 30       # access-токен (httpOnly-cookie), короткий
+    refresh_ttl_hours: int = 168       # refresh-токен (7 дней), ротируется при обновлении
     # issue #4 — хранение токена: httpOnly-cookie (XSS не читает) + CSRF (double-submit).
     # Secure=True для https-прода; на http-localhost браузер отбросит Secure-cookie,
     # поэтому дефолт False (в проде за HTTPS задать COOKIE_SECURE=true).
     cookie_secure: bool = False
     auth_cookie_name: str = "rt_access"
+    refresh_cookie_name: str = "rt_refresh"
     csrf_cookie_name: str = "rt_csrf"
 
     # ── db / очереди ───────────────────────────────────────────────────────────

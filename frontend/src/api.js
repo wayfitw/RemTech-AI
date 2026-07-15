@@ -54,7 +54,21 @@ async function uploadForm(path, file, fields = {}) {
   return res.json();
 }
 
-async function req(path, opts = {}) {
+// #38 — обновление сессии по refresh-cookie (короткий access истёк). true — успех.
+async function tryRefresh() {
+  try {
+    const r = await fetch("/api/refresh", {
+      method: "POST",
+      credentials: "include",
+      headers: { "X-CSRF-Token": csrfToken() },
+    });
+    return r.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function req(path, opts = {}, retried = false) {
   const method = (opts.method || "GET").toUpperCase();
   const headers = { ...(opts.headers || {}) };
   if (_MUTATING.has(method)) headers["X-CSRF-Token"] = csrfToken();
@@ -65,6 +79,10 @@ async function req(path, opts = {}) {
   }
   const res = await fetch(`/api${path}`, { ...opts, headers, credentials: "include" });
   if (res.status === 401) {
+    // #38 — access истёк: один раз обновляем сессию по refresh и повторяем запрос
+    if (!retried && path !== "/login" && path !== "/refresh" && (await tryRefresh())) {
+      return req(path, opts, true);
+    }
     _clearAuthed();
     throw new Error("Сессия истекла, войдите снова");
   }

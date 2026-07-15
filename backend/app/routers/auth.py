@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import auth, cookies
 from app import repositories as repo
+from app.config import get_settings
 from app.database import get_db
 from app.deps import (
     _client_ip,
@@ -16,6 +17,16 @@ from app.schemas import LoginReq, RegisterReq
 from app.tickets import tickets
 
 router = APIRouter()
+settings = get_settings()
+
+
+def _start_session(response: Response, user) -> dict:
+    """#38 — выдаёт access+refresh+csrf и ставит cookie; возвращает тело ответа."""
+    access = auth.make_token(user, "access")
+    refresh = auth.make_token(user, "refresh")
+    csrf = cookies.issue_csrf()
+    cookies.set_auth_cookies(response, access, refresh, csrf)
+    return {"token": access, "csrf": csrf}
 
 
 @router.get("/api/health")
@@ -35,16 +46,14 @@ async def api_register(req: RegisterReq, request: Request, response: Response,
         raise HTTPException(429, "Слишком много попыток регистрации. Повторите позже.")
     if not await auth.registration_open(db):
         raise HTTPException(403, "Регистрация закрыта. Аккаунт заводит администратор.")
-    token, err = await auth.register(db, req.username, req.password, req.full_name or "")
+    _, err = await auth.register(db, req.username, req.password, req.full_name or "")
     if err:
         raise HTTPException(400, err)
     u = await repo.get_user_by_username(db, req.username.strip())
     if u:
         await repo.log_activity(db, u.id, "register", "Регистрация администратора")
     await db.commit()
-    csrf = cookies.issue_csrf()               # #4 — токен в httpOnly-cookie + CSRF
-    cookies.set_auth_cookies(response, token, csrf)
-    return {"token": token, "csrf": csrf}
+    return _start_session(response, u)        # #4/#38 — access+refresh в httpOnly-cookie + CSRF
 
 
 @router.post("/api/login")
@@ -55,7 +64,7 @@ async def api_login(req: LoginReq, request: Request, response: Response,
     if not _login_limiter.allow(f"{ip}:{uname}"):
         log.warning("rate limit: login ip=%s user=%s", ip, uname)
         raise HTTPException(429, "Слишком много попыток входа. Повторите позже.")
-    token, err = await auth.login(db, req.username, req.password)
+    _, err = await auth.login(db, req.username, req.password)
     if err:
         # Issue #12 — фиксируем неуспешный вход (детекция брутфорса)
         u = await repo.get_user_by_username(db, uname)
@@ -68,9 +77,22 @@ async def api_login(req: LoginReq, request: Request, response: Response,
     if u:
         await repo.log_activity(db, u.id, "login", "Вход в систему")
     await db.commit()
-    csrf = cookies.issue_csrf()               # #4 — токен в httpOnly-cookie + CSRF
-    cookies.set_auth_cookies(response, token, csrf)
-    return {"token": token, "csrf": csrf}
+    return _start_session(response, u)        # #4/#38 — access+refresh в httpOnly-cookie + CSRF
+
+
+@router.post("/api/refresh")
+async def api_refresh(request: Request, response: Response, db: AsyncSession = Depends(get_db)):
+    """#38 — обновление сессии по refresh-cookie: новый access + ротация refresh.
+    Отзыв (token_version) и деактивация действуют и здесь: несоответствие → 401."""
+    claims = auth.verify(request.cookies.get(settings.refresh_cookie_name) or "", typ="refresh")
+    if not claims:
+        cookies.clear_auth_cookies(response)
+        raise HTTPException(401, "Сессия истекла, войдите снова")
+    u = await repo.get_user(db, claims["user_id"])
+    if not u or not u.active or claims.get("tv", 0) != (u.token_version or 0):
+        cookies.clear_auth_cookies(response)
+        raise HTTPException(401, "Сессия недействительна")
+    return _start_session(response, u)        # ротация: выдаём новый refresh
 
 
 @router.get("/api/me")

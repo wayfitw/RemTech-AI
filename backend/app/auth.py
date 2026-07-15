@@ -37,24 +37,31 @@ def verify_password(password: str, stored: str) -> bool:
 
 # ── Токены ────────────────────────────────────────────────────────────────────
 
-def make_token(user) -> str:
+def make_token(user, kind: str = "access") -> str:
+    """#38 — access (короткий) или refresh (долгий) токен. Оба несут версию tv
+    (#4) для отзыва; typ различает тип, чтобы refresh нельзя было выдать за access."""
+    ttl = (dt.timedelta(minutes=settings.access_ttl_minutes) if kind == "access"
+           else dt.timedelta(hours=settings.refresh_ttl_hours))
     payload = {
         "sub": str(user.id),
         "username": user.username,
         "name": user.full_name or user.username,
         "role": user.role,
         "tv": int(getattr(user, "token_version", 0) or 0),   # issue #4 — версия для отзыва
-        "exp": dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=settings.jwt_ttl_hours),
+        "typ": kind,
+        "exp": dt.datetime.now(dt.timezone.utc) + ttl,
     }
     return jwt.encode(payload, settings.jwt_secret, algorithm=ALGO)
 
 
-def verify(token: str) -> dict | None:
+def verify(token: str, typ: str | None = None) -> dict | None:
     try:
         p = jwt.decode(token, settings.jwt_secret, algorithms=[ALGO])
+        if typ is not None and p.get("typ", "access") != typ:
+            return None   # refresh нельзя использовать как access и наоборот
         return {"user_id": int(p["sub"]), "username": p.get("username", ""),
                 "name": p.get("name", ""), "role": p.get("role", "user"),
-                "tv": int(p.get("tv", 0))}
+                "tv": int(p.get("tv", 0)), "typ": p.get("typ", "access")}
     except Exception:
         return None
 

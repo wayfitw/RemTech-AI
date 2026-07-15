@@ -326,3 +326,36 @@ async def test_bearer_requests_bypass_csrf(client):
              json={"username": "director", "password": "pass1234"})).json()["token"]
     r = await client.post("/api/logout", headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 200
+
+
+# ── Issue #38 — короткий access + refresh-токен с ротацией ────────────────────
+
+def test_token_typ_enforced():
+    # refresh нельзя использовать как access и наоборот (claim typ)
+    from app import auth
+    class U:
+        id, username, full_name, role, token_version = 1, "u", "U", "user", 0
+    access = auth.make_token(U(), "access")
+    refresh = auth.make_token(U(), "refresh")
+    assert auth.verify(access, typ="access") and auth.verify(access, typ="refresh") is None
+    assert auth.verify(refresh, typ="refresh") and auth.verify(refresh, typ="access") is None
+
+
+async def test_refresh_issues_new_access(client):
+    r = await client.post("/api/register", json={"username": "director", "password": "pass1234"})
+    csrf = r.json()["csrf"]
+    setck = r.headers.get_list("set-cookie")
+    # refresh-cookie httpOnly и ограничена путём /api/refresh
+    assert any("rt_refresh=" in c and "HttpOnly" in c and "/api/refresh" in c for c in setck)
+    # обновление сессии по refresh-cookie → новый access
+    r2 = await client.post("/api/refresh", headers={"X-CSRF-Token": csrf})
+    assert r2.status_code == 200 and "token" in r2.json()
+    assert (await client.get("/api/me")).status_code == 200
+
+
+async def test_refresh_revoked_after_logout(client):
+    csrf = (await client.post("/api/register",
+            json={"username": "director", "password": "pass1234"})).json()["csrf"]
+    assert (await client.post("/api/logout", headers={"X-CSRF-Token": csrf})).status_code == 200
+    # logout отозвал токены (token_version) и очистил cookie → refresh больше не работает
+    assert (await client.post("/api/refresh")).status_code == 401
