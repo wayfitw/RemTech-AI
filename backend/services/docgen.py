@@ -107,9 +107,6 @@ def create_docx(content: str, filename: str = "document") -> bytes:
         return p
 
     def _build_header(logo_path, req_lines):
-        if not logo_path:   # [HEADER] без logo= → берём фирменный из LOGO_PATH (issue #26)
-            from services.docx_style import logo_file
-            logo_path = logo_file()
         hdr = doc.sections[0].header
         hdr.is_linked_to_previous = False
         for p in hdr.paragraphs:
@@ -270,7 +267,7 @@ def create_proposal(data: dict) -> bytes:
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
-    from docx.shared import Cm, Pt, RGBColor
+    from docx.shared import Pt, RGBColor
 
     from services.docx_style import (  # общий стиль (issue #19)
         BAND,
@@ -278,7 +275,6 @@ def create_proposal(data: dict) -> bytes:
         INK,
         SOFT,
         YELLOW,
-        logo_file,
         requisites_lines,
         shade,
     )
@@ -309,13 +305,6 @@ def create_proposal(data: dict) -> bytes:
             e.set(qn("w:space"), "0"); e.set(qn("w:color"), color_hex)
             borders.append(e)
         tbl._tbl.tblPr.append(borders)
-
-    # ── Логотип-шапка (issue #26) ────────────────────────────────────────────
-    _logo = logo_file()   # пусто, если LOGO_PATH не задан — тогда без логотипа
-    if _logo:
-        lp = doc.add_paragraph()
-        lp.paragraph_format.space_after = Pt(4)
-        lp.add_run().add_picture(_logo, width=Cm(3.2))
 
     # ── Заголовок с тонким жёлтым акцентом (вместо крупной плашки) ────────────
     tp = doc.add_paragraph()
@@ -499,24 +488,11 @@ def create_estimate(data: dict) -> bytes:
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
-    from services.docx_style import BAND, DARK, YELLOW, logo_file
+    from services.docx_style import BAND, DARK, YELLOW
 
     wb = Workbook()
     ws = wb.active
     ws.title = "Смета"
-
-    # Логотип-бланк (issue #26): плавающая картинка в правом верхнем углу листа.
-    _logo = logo_file()
-    if _logo:
-        try:
-            from openpyxl.drawing.image import Image as XLImage
-            img = XLImage(_logo)
-            if img.width:   # масштабируем до ~140px по ширине, сохраняя пропорции
-                s = 140 / img.width
-                img.width, img.height = int(img.width * s), int(img.height * s)
-            ws.add_image(img, "H1")
-        except Exception:   # без Pillow/битый растр — смета важнее логотипа
-            pass
 
     thin = Side(style="thin", color="BFBFBF")
     box = Border(left=thin, right=thin, top=thin, bottom=thin)
@@ -661,7 +637,7 @@ def create_proposal_pdf(data: dict) -> bytes:
     from reportlab.lib.units import cm
     from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-    from services.docx_style import COMPANY, logo_file, requisites_lines
+    from services.docx_style import COMPANY, requisites_lines
 
     font = _register_pdf_font()
     yellow = colors.HexColor("#FFCB05")
@@ -680,17 +656,6 @@ def create_proposal_pdf(data: dict) -> bytes:
 
     def esc(s):
         return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-    # Логотип-шапка (issue #26): растровый LOGO_PATH первым флоу-элементом,
-    # высота — по пропорциям исходника.
-    _logo = logo_file()
-    if _logo:
-        from reportlab.lib.utils import ImageReader
-        from reportlab.platypus import Image as RLImage
-        iw, ih = ImageReader(_logo).getSize()
-        lw = 4.5 * cm
-        flow.append(RLImage(_logo, width=lw, height=lw * ih / iw))
-        flow.append(Spacer(1, 6))
 
     # Жёлтая титульная плашка
     bar = Table([[Paragraph("<b>КОММЕРЧЕСКОЕ ПРЕДЛОЖЕНИЕ</b>", title)]], colWidths=[17.5 * cm])
