@@ -1,8 +1,37 @@
 """Чтение веб-страниц (read_url) с защитой от SSRF.
 Веб-поиск выполняется на стороне Anthropic (серверный инструмент web_search)."""
+import functools
+import glob
 import ipaddress
+import os
 import socket
+import ssl
 from urllib.parse import urlparse, urlunparse
+
+# Росгос-домены с сертификатами национального УЦ Минцифры («Russian Trusted CA»),
+# которого нет в стандартном хранилище. Для них — расширенный CA-бандл (issue #35).
+_GOV_SUFFIXES = (".gov.ru", ".voskhod.ru")
+_CERTS_DIR = os.path.join(os.path.dirname(__file__), "..", "certs")
+
+
+def _is_gov_host(host: str) -> bool:
+    h = (host or "").lower()
+    return h == "gov.ru" or any(h.endswith(s) for s in _GOV_SUFFIXES)
+
+
+@functools.lru_cache(maxsize=1)
+def _gov_ca_context() -> "ssl.SSLContext":
+    """TLS-контекст = стандартные корни (certifi) + корни «Russian Trusted CA».
+    Проверка сертификатов ОСТАЁТСЯ включённой; доверие к нацУЦ расширяется только
+    для росгос-доменов (см. _is_gov_host). Сертификаты — в backend/certs/*.pem."""
+    import certifi
+    ctx = ssl.create_default_context(cafile=certifi.where())
+    for pem in sorted(glob.glob(os.path.join(_CERTS_DIR, "*.pem"))):
+        try:
+            ctx.load_verify_locations(cafile=pem)
+        except ssl.SSLError:
+            pass   # битый/неподходящий файл не должен ронять обычные запросы
+    return ctx
 
 
 def _ip_is_internal(ip: str) -> bool:
@@ -73,7 +102,10 @@ def _fetch_html(url: str) -> str:
     import httpx
 
     ua = {"User-Agent": "RemTechAI/1.0 (+internal)"}
-    with httpx.Client(follow_redirects=False, timeout=_TIMEOUT, headers=ua) as client:
+    # Для росгос-доменов доверяем корням Минцифры (иначе CERTIFICATE_VERIFY_FAILED),
+    # для остального — стандартная проверка. Контекст по хосту исходного URL (#35).
+    verify = _gov_ca_context() if _is_gov_host(urlparse(url).hostname) else True
+    with httpx.Client(follow_redirects=False, timeout=_TIMEOUT, headers=ua, verify=verify) as client:
         for _ in range(_MAX_HOPS + 1):
             p = urlparse(url)
             if p.scheme not in ("http", "https") or not p.hostname:

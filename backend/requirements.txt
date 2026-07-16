@@ -11,6 +11,7 @@ python-pptx==1.0.2
 reportlab==4.2.5
 replicate==1.0.4
 httpx==0.28.1
+certifi==2026.6.17
 trafilatura==2.0.0
 
 # Целевой стек БД (EPIC-01: PostgreSQL + pgvector)

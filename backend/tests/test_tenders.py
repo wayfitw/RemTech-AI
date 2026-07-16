@@ -1,32 +1,37 @@
-"""Issue #35 (TASK-0801) — поиск закупок на ЕИС: парсинг, фильтры, RBAC, отказы."""
+"""Issue #35 (TASK-0801) — поиск закупок на ЕИС: парсинг HTML, фильтры, RBAC, отказы."""
 import pytest
 
 from agent.registry import role_can_use_tool
 from services import tenders, websearch
 
-# Реалистичная RSS-выдача расширенного поиска ЕИС (3 карточки).
-FIXTURE = """<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0"><channel>
-  <item>
-    <title>№ 0173200001424001234 Поставка экскаватора XCMG</title>
-    <link>https://zakupki.gov.ru/epz/order/notice/view.html?regNumber=0173200001424001234</link>
-    <description>Заказчик: ГБУ «Автодороги». Начальная (максимальная) цена контракта: 5 000 000,00 российский рубль. Дата окончания подачи заявок: 20.07.2026 10:00</description>
-  </item>
-  <item>
-    <title>№ 0173200001424005678 Поставка фронтального погрузчика (Красноярский край)</title>
-    <link>https://zakupki.gov.ru/epz/order/notice/view.html?regNumber=0173200001424005678</link>
-    <description>Заказчик: МКУ «УКС». Начальная (максимальная) цена контракта: 12 000 000,00 российский рубль. Дата окончания подачи заявок: 22.07.2026 09:00</description>
-  </item>
-  <item>
-    <title>№ 0173200001424009999 Поставка запасных частей</title>
-    <link>https://zakupki.gov.ru/epz/order/notice/view.html?regNumber=0173200001424009999</link>
-    <description>Заказчик: ООО «Ромашка». Предмет: запчасти. Срок подачи заявок: 25.07.2026</description>
-  </item>
-</channel></rss>"""
+
+def _card(num, name, customer, price_html, deadline):
+    price_block = (f'<div class="price-block__value">{price_html}</div>' if price_html else "")
+    return f'''
+    <div class="search-registry-entry-block box-shadow-search-input">
+      <div class="registry-entry__header-mid__number">
+        <a href="https://zakupki.gov.ru/epz/order/notice/ea20/view/common-info.html?regNumber={num}">№ {num}</a>
+      </div>
+      <div class="registry-entry__body-value">{name}</div>
+      <a class="registry-entry__body-href">{customer}</a>
+      {price_block}
+      <div class="data-block__value">Окончание подачи заявок {deadline}</div>
+    </div>'''
 
 
-def test_parse_eis_rss_extracts_fields():
-    items = tenders.parse_eis_rss(FIXTURE)
+# Реалистичная HTML-выдача расширенного поиска ЕИС (3 карточки).
+FIXTURE = "<html><body>" + "".join([
+    _card("0173200001424001234", "Поставка экскаватора XCMG", "ГБУ «Автодороги»",
+          "5 000 000,00 &#8381;", "20.07.2026 10:00"),
+    _card("0173200001424005678", "Поставка фронтального погрузчика (Красноярский край)",
+          "МКУ «УКС»", "12 000 000,00 &#8381;", "22.07.2026 09:00"),
+    _card("0173200001424009999", "Поставка запасных частей", "ООО «Ромашка»",
+          "", "25.07.2026"),
+]) + "</body></html>"
+
+
+def test_parse_eis_html_extracts_fields():
+    items = tenders.parse_eis_html(FIXTURE)
     assert len(items) == 3
     a = items[0]
     assert a.number == "0173200001424001234"
@@ -40,7 +45,7 @@ def test_parse_eis_rss_extracts_fields():
 
 
 def test_filter_by_budget_keeps_unknown_price():
-    items = tenders.parse_eis_rss(FIXTURE)
+    items = tenders.parse_eis_html(FIXTURE)
     res = tenders.apply_filters(items, budget_max=10_000_000)
     nums = {t.number for t in res}
     assert "0173200001424001234" in nums     # 5 млн — прошёл
@@ -49,14 +54,14 @@ def test_filter_by_budget_keeps_unknown_price():
 
 
 def test_filter_by_region_and_customer():
-    items = tenders.parse_eis_rss(FIXTURE)
+    items = tenders.parse_eis_html(FIXTURE)
     assert {t.number for t in tenders.apply_filters(items, region="Красноярск")} == {"0173200001424005678"}
     assert {t.number for t in tenders.apply_filters(items, customer="Ромашка")} == {"0173200001424009999"}
 
 
 def test_build_search_url_has_keywords_and_budget():
     url = tenders.build_search_url("экскаватор XCMG", budget_min=1_000_000, budget_max=9_000_000)
-    assert url.startswith(tenders.EIS_RSS)
+    assert url.startswith(tenders.EIS_SEARCH) and "results.html" in url
     assert "searchString=" in url and "fz44=on" in url
     assert "priceFromGeneral=1000000" in url and "priceToGeneral=9000000" in url
 
@@ -82,8 +87,15 @@ def test_source_unavailable_raises():
 
 
 def test_malformed_source_raises():
+    # ответ не похож на страницу ЕИС (нет registry-entry) → честный отказ
     with pytest.raises(tenders.TenderSourceError):
-        tenders.search_tenders("x", fetch=lambda url: "<not xml")
+        tenders.search_tenders("x", fetch=lambda url: "<html>ошибка 404</html>")
+
+
+def test_empty_results_page_returns_empty():
+    # валидная страница ЕИС без карточек — пустой список, не ошибка
+    page = '<html><body><div class="search-registry">Ничего не найдено</div></body></html>'
+    assert tenders.parse_eis_html(page) == []
 
 
 def test_rbac_tool_gated_by_role():
@@ -95,3 +107,11 @@ def test_rbac_tool_gated_by_role():
     assert role_can_use_tool("менеджер", "search_tenders") is False
     # инструменты без ограничений доступны всем ролям
     assert role_can_use_tool("user", "read_url") is True
+
+
+def test_gov_host_detection():
+    # росгос-домены → расширенный CA-бандл; прочие — стандартная проверка (#35)
+    assert websearch._is_gov_host("zakupki.gov.ru") is True
+    assert websearch._is_gov_host("nuc-cdp.digital.gov.ru") is True
+    assert websearch._is_gov_host("example.com") is False
+    assert websearch._is_gov_host("notgov.ru") is False
