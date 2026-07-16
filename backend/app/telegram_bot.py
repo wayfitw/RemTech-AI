@@ -22,6 +22,7 @@ import re
 import httpx
 
 from app import repositories as repo
+from app import storage
 from app.config import get_settings
 from app.database import SessionLocal
 from app.orchestrator import orchestrator
@@ -103,6 +104,17 @@ class TelegramTransport:
         r = await self._client.get(f"{base}/{path}")
         r.raise_for_status()
         return r.content
+
+    async def send_file(self, chat_id: int, data: bytes, filename: str,
+                        method: str = "sendDocument", field: str = "document") -> dict:
+        """Отправляет файл (multipart): sendPhoto для картинок, sendDocument для
+        документов/видео. Возвращает ответ Telegram."""
+        r = await self._client.post(
+            f"{self._base}/{method}",
+            data={"chat_id": str(chat_id)},
+            files={field: (filename, data)})
+        r.raise_for_status()
+        return r.json()
 
     async def aclose(self) -> None:
         await self._client.aclose()
@@ -207,6 +219,7 @@ class TelegramBot:
         await self._chat_action(chat_id, "typing")
         collected: list[str] = []
         sources: list[dict] = []
+        media: list[tuple[int, str, str]] = []   # (file_id, name, тип: image|document)
 
         async def emit(event: dict) -> None:
             etype = event.get("type")
@@ -217,6 +230,10 @@ class TelegramBot:
                     collected.append(event["text"])
             elif etype == "sources":
                 sources.extend(event.get("items") or [])
+            elif etype in ("image", "document"):
+                # сгенерированные картинки/документы (КП, сметы, видео) — шлём файлом
+                if event.get("file_id"):
+                    media.append((event["file_id"], event.get("name") or "file", etype))
             elif etype == "awaiting_confirmation":
                 # побочное действие требует подтверждения (#30) — спрашиваем кнопками
                 self._pending_conv[chat_id] = self._conv.get(chat_id, 0)
@@ -247,8 +264,32 @@ class TelegramBot:
             # компактно: одна строка, имена без расширений, через середину, курсивом
             answer += "\n\n📎 <i>" + esc(" · ".join(names)) + "</i>"
         await self._send(chat_id, answer)
+        # Сгенерированные файлы (картинки/КП/сметы/видео) — отправляем после текста.
+        for file_id, name, etype in media:
+            await self._send_file(chat_id, file_id, name, etype)
         # Голос принимаем на входе (STT), но ответ шлём только текстом — голосовой
         # ответ (TTS) в Telegram-канале отключён по требованию.
+
+    async def _send_file(self, chat_id: int, file_id: int, name: str, etype: str) -> None:
+        """Шлёт сгенерированный файл в Telegram: картинку — sendPhoto (с откатом на
+        sendDocument), прочее — sendDocument. Ошибка не рвёт ход (текст уже ушёл)."""
+        try:
+            async with SessionLocal() as s:
+                rec = await repo.get_file_record(s, file_id)
+            blob = storage.read_record_bytes(rec) if rec else None
+            if not blob:
+                return
+            data, fname = blob
+            if etype == "image":
+                try:
+                    await self.tx.send_file(chat_id, data, fname, "sendPhoto", "photo")
+                    return
+                except Exception:   # слишком большая/неподдерживаемая картинка — как документ
+                    pass
+            await self.tx.send_file(chat_id, data, fname, "sendDocument", "document")
+        except Exception:
+            log.exception("send file failed chat=%s file=%s", chat_id, file_id)
+            await self._send(chat_id, f"⚠️ Не удалось отправить файл «{esc(name)}».")
 
     # ── ответ на кнопку подтверждения ────────────────────────────────────────
     async def _on_callback(self, cq: dict) -> None:

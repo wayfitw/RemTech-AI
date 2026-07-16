@@ -214,3 +214,33 @@ async def test_bot_missing_persona_falls_back(session, monkeypatch):
     _bind_test_db(monkeypatch)
     bot = TelegramBot(FakeTransport(), allowmap={}, agent_name="Нет-Такого-Агента")
     assert await bot.agent_id() is None            # не найден → дефолтный агент
+
+
+async def test_bot_sends_generated_image(session, monkeypatch):
+    # событие image в ходе → бот отправляет картинку через sendPhoto (не только текст)
+    _bind_test_db(monkeypatch)
+    from app import storage
+    async with tb.SessionLocal() as s:
+        u = await repo.create_user(s, "ceo", "hash", role="admin", full_name="CEO")
+        conv = await repo.create_conversation(s, u.id, "чат")
+        await s.commit()
+        rec = await storage.save_bytes(s, u.id, conv.id, "pic.jpg", b"\xff\xd8pic", kind="image")
+        await s.commit()
+        fid, cid = rec.id, conv.id
+
+    async def fake_run_turn(user, conversation_id, text, files, agent_id, emit, **kw):
+        await emit({"type": "image", "file_id": fid, "name": "pic.jpg"})
+        await emit({"type": "done", "text": "Готово"})
+        return cid
+    monkeypatch.setattr(tb, "run_turn", fake_run_turn)
+
+    sent = []
+
+    class Tx(FakeTransport):
+        async def send_file(self, chat_id, data, filename, method="sendDocument", field="document"):
+            sent.append({"method": method, "field": field, "name": filename})
+            return {"ok": True}
+
+    bot = TelegramBot(Tx(), allowmap={100: "ceo"})
+    await bot.handle_update({"message": {"chat": {"id": 100}, "from": {"id": 100}, "text": "нарисуй"}})
+    assert sent == [{"method": "sendPhoto", "field": "photo", "name": "pic.jpg"}]
