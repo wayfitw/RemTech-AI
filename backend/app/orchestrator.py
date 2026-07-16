@@ -18,7 +18,7 @@ from app.database import SessionLocal
 from app.llm import gateway, resolve_route
 from app.logging_config import get_logger
 from app.state import make_state_store
-from services import docgen, mail_svc, replicate_svc, websearch
+from services import docgen, mail_svc, replicate_svc, telethon_svc, websearch
 
 Emit = Callable[[dict], Awaitable[None]]
 settings = get_settings()
@@ -349,6 +349,9 @@ class Orchestrator:
             "list_reminders": self._t_list_reminders,
             "cancel_reminder": self._t_cancel_reminder,
             "read_email": self._t_read_email,
+            "list_tg_chats": self._t_list_tg_chats,
+            "read_tg_chat": self._t_read_tg_chat,
+            "digest_tg_groups": self._t_digest_tg_groups,
         }
 
     async def _execute_tool(self, name, params, emit, uid, cid, roles=None, sources=None):
@@ -577,6 +580,34 @@ class Orchestrator:
         lines = [f"• {m['from']} — {m['subject']} ({m['date'][:22]})\n  {m['snippet']}"
                  for m in mails]
         return f"Последние письма ({src}), {len(mails)} шт:\n" + "\n".join(lines)
+
+    async def _t_list_tg_chats(self, params, emit, uid, cid, roles, sources):
+        try:
+            return await telethon_svc.list_dialogs(params.get("limit", 30))
+        except telethon_svc.TelethonError as e:
+            return f"Чтение ТГ недоступно: {e}"
+
+    async def _t_read_tg_chat(self, params, emit, uid, cid, roles, sources):
+        target = params.get("target")
+        if not target:
+            return "Укажи чат/группу (@username или id)."
+        try:
+            return await telethon_svc.read_chat(target, params.get("limit", 30))
+        except telethon_svc.TelethonError as e:
+            return f"Чтение ТГ недоступно: {e}"
+
+    async def _t_digest_tg_groups(self, params, emit, uid, cid, roles, sources):
+        groups = params.get("groups") or get_settings().tg_digest_group_list
+        if not groups:
+            return ("Список групп для сводки не задан. Укажи группы в запросе или в настройке "
+                    "TG_DIGEST_GROUPS.")
+        if not telethon_svc.is_configured():
+            return ("Чтение ТГ не настроено (нужны API_ID/API_HASH и вход по QR: "
+                    "python -m scripts.telethon_login).")
+        try:
+            return await telethon_svc.collect_digest(groups, params.get("hours", 12))
+        except telethon_svc.TelethonError as e:
+            return f"Чтение ТГ недоступно: {e}"
 
     async def _t_read_doc(self, params, emit, uid, cid, roles, sources):
         cur = await self.state.get_docx(cid)

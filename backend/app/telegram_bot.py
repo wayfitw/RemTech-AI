@@ -408,9 +408,52 @@ class TelegramBot:
                 log.exception("reminder delivery error")
             await asyncio.sleep(30)
 
+    # ── утренний дайджест ТГ-групп ───────────────────────────────────────────
+    async def _run_digest(self) -> None:
+        """Один утренний дайджест: модель собирает и резюмирует сообщения групп за
+        ночь (через инструмент digest_tg_groups) и шлёт директору."""
+        from services import telethon_svc
+        s = get_settings()
+        if not (s.tg_digest_group_list and telethon_svc.is_configured() and self.allowmap):
+            return
+        tg, username = next(iter(self.allowmap.items()))   # адресат — владелец бота
+        async with SessionLocal() as s2:
+            u = await repo.get_user_by_username(s2, username)
+        if not u or not u.active:
+            return
+        user = {"user_id": u.id, "username": u.username,
+                "name": u.full_name or u.username, "role": u.role}
+        parts: list[str] = []
+
+        async def emit(ev):
+            if ev.get("type") == "delta":
+                parts.append(ev.get("text", ""))
+        await run_turn(user, None,
+                       "Собери и пришли краткую сводку сообщений из рабочих групп за прошедшую "
+                       "ночь (digest_tg_groups за 12 часов): по каждой группе — ключевые темы, "
+                       "решения и что требует моего внимания.", [], await self.agent_id(), emit)
+        text = md_to_tg_html("".join(parts).strip() or "За ночь ничего существенного.")
+        await self._send(tg, "🌙 <b>Утренний дайджест групп</b>\n\n" + text)
+
+    async def _digest_loop(self) -> None:
+        from datetime import datetime
+        last_date = None
+        while not self._stop:
+            try:
+                s = get_settings()
+                now = datetime.now()
+                if now.hour == s.tg_digest_hour and last_date != now.date() \
+                        and s.tg_digest_group_list:
+                    await self._run_digest()
+                    last_date = now.date()   # раз в сутки
+            except Exception:
+                log.exception("digest error")
+            await asyncio.sleep(300)   # проверка раз в 5 минут
+
     async def run(self) -> None:
         log.info("telegram bot started (allow-list=%d)", len(self.allowmap))
-        reminder_task = asyncio.create_task(self._reminder_loop())
+        tasks = [asyncio.create_task(self._reminder_loop()),
+                 asyncio.create_task(self._digest_loop())]
         try:
             while not self._stop:
                 try:
@@ -419,7 +462,8 @@ class TelegramBot:
                     log.exception("poll error; retry in 3s")
                     await asyncio.sleep(3)
         finally:
-            reminder_task.cancel()
+            for t in tasks:
+                t.cancel()
 
 
 def build_bot() -> TelegramBot:

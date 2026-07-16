@@ -36,3 +36,4 @@ faster-whisper==1.2.1
 # CPU-версия torch; модель качается при первом синтезе; голос не покидает контур.
 torch>=2.6
 omegaconf>=2.3   # конфиг для Silero TTS (torch.hub)
+telethon==1.44.0

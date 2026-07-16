@@ -126,6 +126,20 @@ class Settings(BaseSettings):
     yandex_imap_user: str = ""
     yandex_imap_password: str = ""
 
+    # ── Telethon (чтение ТГ-чатов от лица пользователя) ─────────────────────────
+    # api_id/api_hash — с my.telegram.org; telethon_session — StringSession (создаётся
+    # входом по QR: python -m scripts.telethon_login). Пусто → «не настроено».
+    telegram_api_id: int = 0
+    telegram_api_hash: str = ""
+    telethon_session: str = ""
+    # Утренний дайджест групп: список чатов (через запятую: @username или id) и час (местный)
+    tg_digest_groups: str = ""
+    tg_digest_hour: int = 7
+
+    @property
+    def tg_digest_group_list(self) -> list[str]:
+        return [g.strip() for g in self.tg_digest_groups.split(",") if g.strip()]
+
     # ── файлы / документы ──────────────────────────────────────────────────────
     files_dir: str = "data/files"
     pdf_font_path: str = ""
