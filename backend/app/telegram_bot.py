@@ -24,7 +24,6 @@ import httpx
 from app import repositories as repo
 from app.config import get_settings
 from app.database import SessionLocal
-from app.media import maybe_synthesize, wav_to_ogg_opus
 from app.orchestrator import orchestrator
 from app.turn import run_turn
 
@@ -104,16 +103,6 @@ class TelegramTransport:
         r = await self._client.get(f"{base}/{path}")
         r.raise_for_status()
         return r.content
-
-    async def send_media(self, chat_id: int, data: bytes, filename: str, mime: str,
-                         method: str = "sendVoice", field: str = "voice") -> dict:
-        """Отправляет аудио файлом (multipart): sendVoice (OGG/Opus) или sendAudio (#40)."""
-        r = await self._client.post(
-            f"{self._base}/{method}",
-            data={"chat_id": str(chat_id)},
-            files={field: (filename, data, mime)})
-        r.raise_for_status()
-        return r.json()
 
     async def aclose(self) -> None:
         await self._client.aclose()
@@ -239,26 +228,8 @@ class TelegramBot:
             # компактно: одна строка, имена без расширений, через середину, курсивом
             answer += "\n\n📎 <i>" + esc(" · ".join(names)) + "</i>"
         await self._send(chat_id, answer)
-        # #40 — голосовой ответ: голос на входе + TTS включён → озвучиваем (текст уже ушёл)
-        if audio is not None and get_settings().tts_enabled:
-            await self._send_voice_answer(chat_id, plain)
-
-    async def _send_voice_answer(self, chat_id: int, text: str) -> None:
-        """Озвучивает ответ (Silero) и шлёт голосовым (OGG/Opus → sendVoice; при сбое
-        кодека — sendAudio WAV). Любая ошибка — тихо: текстовый ответ уже отправлен."""
-        try:
-            wav = await maybe_synthesize(text)
-            if not wav:
-                return
-            ogg = await asyncio.to_thread(wav_to_ogg_opus, wav)
-            if ogg:
-                await self.tx.send_media(chat_id, ogg, "voice.ogg", "audio/ogg",
-                                         method="sendVoice", field="voice")
-            else:
-                await self.tx.send_media(chat_id, wav, "answer.wav", "audio/wav",
-                                         method="sendAudio", field="audio")
-        except Exception:
-            log.exception("voice answer failed chat=%s", chat_id)
+        # Голос принимаем на входе (STT), но ответ шлём только текстом — голосовой
+        # ответ (TTS) в Telegram-канале отключён по требованию.
 
     # ── ответ на кнопку подтверждения ────────────────────────────────────────
     async def _on_callback(self, cq: dict) -> None:

@@ -181,42 +181,9 @@ async def test_confirmation_callback_resolves(session, monkeypatch):
     assert any(m == "answerCallbackQuery" for m, _ in tx.calls)
 
 
-# ── Issue #40 — голосовой ответ (TTS → sendVoice / fallback sendAudio) ─────────
+# ── Голосовой ответ отключён: бот принимает голос (STT), но отвечает текстом ──
 
-class _VoiceTx(FakeTransport):
-    def __init__(self):
-        super().__init__()
-        self.media = []
-
-    async def send_media(self, chat_id, data, filename, mime, method="sendVoice", field="voice"):
-        self.media.append({"method": method, "mime": mime, "field": field})
-        return {"ok": True}
-
-
-async def test_voice_answer_sends_ogg(monkeypatch):
-    async def fake_synth(text):
-        return b"WAV..."
-    monkeypatch.setattr(tb, "maybe_synthesize", fake_synth)
-    monkeypatch.setattr(tb, "wav_to_ogg_opus", lambda wav: b"OggS...")   # энкодер ок
-    tx = _VoiceTx()
-    await TelegramBot(tx, allowmap={})._send_voice_answer(42, "ответ голосом")
-    assert tx.media == [{"method": "sendVoice", "mime": "audio/ogg", "field": "voice"}]
-
-
-async def test_voice_answer_falls_back_to_audio(monkeypatch):
-    async def fake_synth(text):
-        return b"WAV..."
-    monkeypatch.setattr(tb, "maybe_synthesize", fake_synth)
-    monkeypatch.setattr(tb, "wav_to_ogg_opus", lambda wav: None)          # энкодер недоступен
-    tx = _VoiceTx()
-    await TelegramBot(tx, allowmap={})._send_voice_answer(42, "ответ")
-    assert tx.media == [{"method": "sendAudio", "mime": "audio/wav", "field": "audio"}]
-
-
-async def test_voice_answer_none_when_tts_off(monkeypatch):
-    async def no_synth(text):
-        return None                                                        # TTS выключен → None
-    monkeypatch.setattr(tb, "maybe_synthesize", no_synth)
-    tx = _VoiceTx()
-    await TelegramBot(tx, allowmap={})._send_voice_answer(42, "ответ")
-    assert tx.media == []                                                   # ничего не шлём
+def test_bot_has_no_voice_reply():
+    # TTS в Telegram убран — ни озвучки ответа, ни транспортной отправки медиа
+    assert not hasattr(TelegramBot, "_send_voice_answer")
+    assert not hasattr(tb.TelegramTransport, "send_media")
