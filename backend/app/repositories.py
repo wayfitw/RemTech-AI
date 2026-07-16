@@ -17,6 +17,7 @@ from app.models import (
     KBDocument,
     ModelConfig,
     Notification,
+    Reminder,
     TenderSeen,
     TenderSubscription,
     UploadedFile,
@@ -426,3 +427,36 @@ async def usernames_by_roles(s, roles: list[str]) -> list[str]:
         return []
     stmt = select(User.username).where(User.role.in_(roles), User.active == 1)
     return list((await s.execute(stmt)).scalars())
+
+
+# ── Напоминания (личный ассистент) ────────────────────────────────────────────
+
+async def create_reminder(s, user_id: int, text: str, due_at: dt.datetime,
+                          lead_pending: list[int]) -> Reminder:
+    rem = Reminder(user_id=user_id, text=text, due_at=due_at, lead_pending=lead_pending)
+    s.add(rem)
+    await s.flush()
+    return rem
+
+
+async def list_reminders(s, user_id: int) -> list[Reminder]:
+    """Предстоящие напоминания пользователя (по времени события)."""
+    res = await s.scalars(
+        select(Reminder).where(Reminder.user_id == user_id).order_by(Reminder.due_at))
+    return list(res)
+
+
+async def get_reminder(s, reminder_id: int) -> Reminder | None:
+    return await s.get(Reminder, reminder_id)
+
+
+async def delete_reminder(s, reminder_id: int, user_id: int) -> bool:
+    """Удаляет напоминание владельца. True — если что-то удалено (защита от IDOR)."""
+    res = await s.execute(
+        delete(Reminder).where(Reminder.id == reminder_id, Reminder.user_id == user_id))
+    return res.rowcount > 0
+
+
+async def all_reminders(s) -> list[Reminder]:
+    """Все активные напоминания — для фоновой доставки заблаговременных сигналов."""
+    return list(await s.scalars(select(Reminder)))

@@ -205,3 +205,19 @@ class Notification(Base):
     link: Mapped[str | None] = mapped_column(Text)
     read_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[dt.datetime] = _now_col()
+
+
+class Reminder(Base):
+    """Напоминание пользователя (личный ассистент в Telegram). due_at — время события
+    (в UTC); lead_pending — ещё не сработавшие заблаговременные сигналы в минутах до
+    события (напр. [60, 30, 10, 0], 0 = в момент). Строка удаляется, когда все сигналы
+    отправлены."""
+    __tablename__ = "reminders"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    text: Mapped[str] = mapped_column(Text)
+    due_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), index=True)
+    lead_pending: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[dt.datetime] = _now_col()

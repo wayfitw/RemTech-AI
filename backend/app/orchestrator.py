@@ -5,7 +5,7 @@
 """
 import asyncio
 import base64
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Awaitable, Callable
 
 from agent.registry import needs_confirm, role_can_use_tool
@@ -345,6 +345,9 @@ class Orchestrator:
             "fill_template": self._t_fill_template,
             "read_doc": self._t_read_doc,
             "apply_doc_edits": self._t_apply_doc_edits,
+            "set_reminder": self._t_set_reminder,
+            "list_reminders": self._t_list_reminders,
+            "cancel_reminder": self._t_cancel_reminder,
         }
 
     async def _execute_tool(self, name, params, emit, uid, cid, roles=None, sources=None):
@@ -515,6 +518,50 @@ class Orchestrator:
         if remaining:
             msg += " Осталось заполнить: " + ", ".join("{{" + r + "}}" for r in remaining) + "."
         return msg
+
+    # ── Напоминания (личный ассистент) ───────────────────────────────────────
+    async def _t_set_reminder(self, params, emit, uid, cid, roles, sources):
+        text = (params.get("text") or "").strip()
+        raw = (params.get("datetime") or "").strip()
+        if not text or not raw:
+            return "Нужен текст напоминания и время события."
+        try:
+            local = datetime.fromisoformat(raw)
+        except ValueError:
+            return f"Не понял дату/время «{raw}». Формат: 2026-07-17T10:00."
+        # Время события трактуем как местное, храним в UTC (сравнение в доставке — в UTC)
+        due_utc = (local if local.tzinfo else local.astimezone()).astimezone(timezone.utc)
+        leads = params.get("lead_minutes")
+        if not isinstance(leads, list) or not leads:
+            leads = [60, 30, 10, 0]
+        # только валидные неотрицательные, по убыванию, уникальные; отбрасываем уже прошедшие
+        now = datetime.now(timezone.utc)
+        leads = sorted({int(m) for m in leads if isinstance(m, (int, float)) and m >= 0}, reverse=True)
+        leads = [m for m in leads if due_utc.timestamp() - m * 60 > now.timestamp() - 60]
+        if due_utc <= now:
+            return "Это время уже прошло — укажите будущее время."
+        async with SessionLocal() as s:
+            rem = await repo.create_reminder(s, uid, text, due_utc, leads or [0])
+            await s.commit()
+            rid = rem.id
+        when = due_utc.astimezone().strftime("%d.%m %H:%M")
+        pre = ", ".join(f"за {m} мин" if m else "в момент" for m in (leads or [0]))
+        return f"Напоминание #{rid} поставлено на {when}: «{text}». Предупрежу: {pre}."
+
+    async def _t_list_reminders(self, params, emit, uid, cid, roles, sources):
+        async with SessionLocal() as s:
+            rems = await repo.list_reminders(s, uid)
+        if not rems:
+            return "Активных напоминаний нет."
+        lines = [f"#{r.id} — {r.due_at.astimezone().strftime('%d.%m %H:%M')} — {r.text}" for r in rems]
+        return "Активные напоминания:\n" + "\n".join(lines)
+
+    async def _t_cancel_reminder(self, params, emit, uid, cid, roles, sources):
+        rid = params.get("reminder_id")
+        async with SessionLocal() as s:
+            ok = await repo.delete_reminder(s, int(rid), uid) if rid is not None else False
+            await s.commit()
+        return f"Напоминание #{rid} отменено." if ok else "Такое напоминание не найдено."
 
     async def _t_read_doc(self, params, emit, uid, cid, roles, sources):
         cur = await self.state.get_docx(cid)

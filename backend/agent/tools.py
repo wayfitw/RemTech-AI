@@ -326,4 +326,47 @@ TOOLS = [
             "required": ["fields"],
         },
     },
+    {
+        "name": "set_reminder",
+        "description": (
+            "Ставит напоминание. Используй, когда пользователь просит напомнить/не забыть "
+            "что-то к определённому времени («напомни завтра в 10 позвонить Диме»). Время "
+            "события вычисли САМ по текущей дате/времени (они в системном сообщении) и передай "
+            "в datetime как ISO 8601 по местному времени. lead_minutes — за сколько минут до "
+            "события слать предупреждения (по умолчанию 60, 30, 10 и 0 = в момент события)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string",
+                         "description": "О чём напомнить, кратко (напр. «позвонить Диме»)"},
+                "datetime": {"type": "string",
+                             "description": "Дата и время события, ISO 8601 местное, напр. 2026-07-17T10:00"},
+                "lead_minutes": {
+                    "type": "array", "items": {"type": "integer"},
+                    "description": "За сколько минут до события напоминать; 0 = в момент. По умолчанию [60,30,10,0]",
+                },
+            },
+            "required": ["text", "datetime"],
+        },
+    },
+    {
+        "name": "list_reminders",
+        "description": "Показывает активные напоминания пользователя (с их номерами и временем).",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "cancel_reminder",
+        "description": (
+            "Отменяет (удаляет) напоминание по его номеру. Номер узнай через list_reminders, "
+            "если пользователь не назвал его явно."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "reminder_id": {"type": "integer", "description": "Номер напоминания"},
+            },
+            "required": ["reminder_id"],
+        },
+    },
 ]

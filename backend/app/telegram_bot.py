@@ -365,14 +365,61 @@ class TelegramBot:
                 log.exception("update handling failed")
         return len(updates)
 
-    async def run(self) -> None:
-        log.info("telegram bot started (allow-list=%d)", len(self.allowmap))
+    # ── доставка напоминаний ─────────────────────────────────────────────────
+    async def _deliver_reminders(self) -> None:
+        """Один проход: шлёт заблаговременные сигналы, время которых наступило.
+        Отправленные смещения убираются; когда все сработали — напоминание удаляется.
+        Просроченные больше чем на час — тихо отбрасываем (не спамим устаревшим)."""
+        from datetime import datetime, timedelta, timezone
+        uname_to_tg = {uname: tg for tg, uname in self.allowmap.items()}
+        now = datetime.now(timezone.utc)
+        async with SessionLocal() as s:
+            for rem in await repo.all_reminders(s):
+                user = await repo.get_user(s, rem.user_id)
+                tg = uname_to_tg.get(user.username) if user else None
+                if tg is None:
+                    continue   # пользователь недоступен через этот бот — не трогаем
+                pending = list(rem.lead_pending or [])
+                fired = []
+                for off in pending:
+                    trigger = rem.due_at - timedelta(minutes=off)
+                    if trigger <= now:
+                        if (now - trigger) <= timedelta(hours=1):
+                            await self._send_reminder(tg, rem, off)
+                        fired.append(off)
+                if fired:
+                    remaining = [o for o in pending if o not in fired]
+                    if remaining:
+                        rem.lead_pending = remaining
+                    else:
+                        await s.delete(rem)
+            await s.commit()
+
+    async def _send_reminder(self, chat_id: int, rem, off: int) -> None:
+        when = rem.due_at.astimezone().strftime("%H:%M")
+        head = f"🔔 Через {off} мин ({when})" if off else "🔔 Пора"
+        await self._send(chat_id, f"{head}: {esc(rem.text)}")
+
+    async def _reminder_loop(self) -> None:
         while not self._stop:
             try:
-                await self.poll_once()
+                await self._deliver_reminders()
             except Exception:
-                log.exception("poll error; retry in 3s")
-                await asyncio.sleep(3)
+                log.exception("reminder delivery error")
+            await asyncio.sleep(30)
+
+    async def run(self) -> None:
+        log.info("telegram bot started (allow-list=%d)", len(self.allowmap))
+        reminder_task = asyncio.create_task(self._reminder_loop())
+        try:
+            while not self._stop:
+                try:
+                    await self.poll_once()
+                except Exception:
+                    log.exception("poll error; retry in 3s")
+                    await asyncio.sleep(3)
+        finally:
+            reminder_task.cancel()
 
 
 def build_bot() -> TelegramBot:
