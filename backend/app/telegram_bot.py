@@ -27,6 +27,7 @@ from app.config import get_settings
 from app.database import SessionLocal
 from app.orchestrator import orchestrator
 from app.turn import run_turn
+from services.extract import detect_kind
 
 log = logging.getLogger("telegram")
 
@@ -174,7 +175,10 @@ class TelegramBot:
         tg_id = frm.get("id")
         text = (msg.get("text") or "").strip()
         voice = msg.get("voice") or msg.get("audio")   # #34 — голосовое/аудио
-        if not text and not voice:
+        document = msg.get("document")                 # присланный файл (pptx/docx/pdf/…)
+        photo = msg.get("photo")                       # присланное фото (список размеров)
+        caption = (msg.get("caption") or "").strip()   # подпись к файлу/фото
+        if not text and not voice and not document and not photo:
             return
 
         user = await self.resolve_user(tg_id)
@@ -211,11 +215,35 @@ class TelegramBot:
                 await self._send(chat_id, "Не удалось получить голосовое сообщение.")
                 return
 
-        await self._run_turn(chat_id, user, text, audio=audio)
+        # Входящий файл (документ/фото) → скачиваем и передаём ходу вложением, чтобы
+        # модель «увидела» содержимое (презентация/договор/картинка). Подпись — как текст.
+        file_ids: list[int] = []
+        attach = document or (photo[-1] if photo else None)
+        if attach:
+            await self._chat_action(chat_id, "typing")
+            if (attach.get("file_size") or 0) > 20 * 1024 * 1024:
+                await self._send(chat_id, "Файл слишком большой — Telegram отдаёт боту до 20 МБ.")
+                return
+            fname = (document.get("file_name") if document else "") or "photo.jpg"
+            try:
+                data = await self.tx.get_file_bytes(attach["file_id"])
+            except Exception:
+                log.exception("file download failed chat=%s", chat_id)
+                await self._send(chat_id, "Не удалось получить файл.")
+                return
+            async with SessionLocal() as s:
+                rec = await storage.save_bytes(s, user["user_id"], self._conv.get(chat_id),
+                                               fname, data, kind=detect_kind(fname), direction="input")
+                await s.commit()
+                file_ids = [rec.id]
+            if not text:
+                text = caption or "Разбери этот файл."
+
+        await self._run_turn(chat_id, user, text, audio=audio, file_ids=file_ids)
 
     # ── прогон хода через общее ядро ─────────────────────────────────────────
     async def _run_turn(self, chat_id: int, user: dict, text: str,
-                        audio: bytes | None = None) -> None:
+                        audio: bytes | None = None, file_ids: list[int] | None = None) -> None:
         await self._chat_action(chat_id, "typing")
         collected: list[str] = []
         sources: list[dict] = []
@@ -249,8 +277,8 @@ class TelegramBot:
                 collected.append("⚠️ " + event.get("text", "Ошибка"))
 
         try:
-            cid = await run_turn(user, self._conv.get(chat_id), text, [], await self.agent_id(),
-                                 emit, audio=audio, audio_mime="audio/ogg")
+            cid = await run_turn(user, self._conv.get(chat_id), text, file_ids or [],
+                                 await self.agent_id(), emit, audio=audio, audio_mime="audio/ogg")
             self._conv[chat_id] = cid
         except Exception:
             log.exception("telegram turn failed chat=%s", chat_id)

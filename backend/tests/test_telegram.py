@@ -244,3 +244,38 @@ async def test_bot_sends_generated_image(session, monkeypatch):
     bot = TelegramBot(Tx(), allowmap={100: "ceo"})
     await bot.handle_update({"message": {"chat": {"id": 100}, "from": {"id": 100}, "text": "нарисуй"}})
     assert sent == [{"method": "sendPhoto", "field": "photo", "name": "pic.jpg"}]
+
+
+async def test_bot_accepts_incoming_document(session, monkeypatch):
+    # присланный файл → бот скачивает, сохраняет и передаёт ходу вложением
+    _bind_test_db(monkeypatch)
+    async with tb.SessionLocal() as s:
+        await repo.create_user(s, "ceo2", "h", role="admin", full_name="CEO")
+        await s.commit()
+
+    captured = {}
+
+    async def fake_run_turn(user, conversation_id, text, files, agent_id, emit, **kw):
+        captured["files"], captured["text"] = files, text
+        await emit({"type": "done", "text": "ок"})
+        return 1
+    monkeypatch.setattr(tb, "run_turn", fake_run_turn)
+
+    class Tx(FakeTransport):
+        async def get_file_bytes(self, file_id):
+            import io
+
+            from docx import Document
+            d = Document()
+            d.add_paragraph("Отчёт по XCMG")
+            buf = io.BytesIO()
+            d.save(buf)
+            return buf.getvalue()
+
+    bot = TelegramBot(Tx(), allowmap={200: "ceo2"})
+    await bot.handle_update({"message": {"chat": {"id": 200}, "from": {"id": 200},
+                                         "document": {"file_id": "f1", "file_name": "report.docx"}}})
+    assert captured["files"] and captured["text"]        # файл и текст-подсказка переданы ходу
+    async with tb.SessionLocal() as s:
+        rec = await repo.get_file_record(s, captured["files"][0])
+    assert rec is not None and rec.direction == "input"  # сохранён как входящее вложение
