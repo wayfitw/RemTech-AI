@@ -141,6 +141,15 @@ class Settings(BaseSettings):
     def tg_digest_group_list(self) -> list[str]:
         return [g.strip() for g in self.tg_digest_groups.split(",") if g.strip()]
 
+    # ── Дайджест новостей по ИИ (EPIC-10, #42) ──────────────────────────────────
+    ai_news_enabled: bool = False   # включить периодический дайджест новостей ИИ
+    ai_news_hour: int = 9           # час доставки (местный)
+    ai_news_topics: str = ""        # темы через запятую; пусто → общий ИИ
+
+    @property
+    def ai_news_topic_list(self) -> list[str]:
+        return [t.strip() for t in self.ai_news_topics.split(",") if t.strip()]
+
     # ── файлы / документы ──────────────────────────────────────────────────────
     files_dir: str = "data/files"
     pdf_font_path: str = ""

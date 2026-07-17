@@ -358,6 +358,7 @@ class Orchestrator:
             "get_weather": self._t_get_weather,
             "create_contract": self._t_create_contract,
             "analyze_conversation": self._t_analyze_conversation,
+            "ai_news_digest": self._t_ai_news_digest,
         }
 
     async def _execute_tool(self, name, params, emit, uid, cid, roles=None, sources=None):
@@ -682,6 +683,28 @@ class Orchestrator:
         n = sum(len(params.get(k) or []) for k in
                 ("agreements", "open_questions", "next_steps", "risks"))
         return f"Отчёт анализа «{fname}» готов ({n} пунктов) и отправлен пользователю."
+
+    async def _t_ai_news_digest(self, params, emit, uid, cid, roles, sources):
+        items = params.get("items") or []
+        lines, seen = [], set()
+        for it in items:
+            text = (it.get("text") or "").strip()
+            url = (it.get("url") or "").strip()
+            key = url or text.lower()
+            if not text or key in seen:   # дедуп внутри выпуска
+                continue
+            seen.add(key)
+            lines.append(f"• {text}" + (f"\n  {url}" if url else ""))
+            if len(lines) >= 10:
+                break
+        if not lines:
+            return "Значимых новостей для дайджеста не набралось."
+        title = (params.get("title") or "Дайджест новостей по ИИ").strip()
+        body = "\n".join(lines)
+        async with SessionLocal() as s:   # публикуем в веб-ленту уведомлений
+            await repo.add_notification(s, "руководство", title, body)
+            await s.commit()
+        return f"📰 {title}\n\n{body}"
 
     async def _t_read_doc(self, params, emit, uid, cid, roles, sources):
         cur = await self.state.get_docx(cid)

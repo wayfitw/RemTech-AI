@@ -450,6 +450,47 @@ class TelegramBot:
                 log.exception("digest error")
             await asyncio.sleep(300)   # проверка раз в 5 минут
 
+    # ── дайджест новостей по ИИ (#42) ────────────────────────────────────────
+    async def _run_news_digest(self) -> None:
+        s = get_settings()
+        if not (s.ai_news_enabled and self.allowmap):
+            return
+        tg, username = next(iter(self.allowmap.items()))
+        async with SessionLocal() as s2:
+            u = await repo.get_user_by_username(s2, username)
+        if not u or not u.active:
+            return
+        user = {"user_id": u.id, "username": u.username,
+                "name": u.full_name or u.username, "role": u.role}
+        topics = s.ai_news_topic_list
+        hint = ("по темам: " + ", ".join(topics)) if topics else "по искусственному интеллекту"
+        parts: list[str] = []
+
+        async def emit(ev):
+            if ev.get("type") == "delta":
+                parts.append(ev.get("text", ""))
+        await run_turn(user, None,
+                       f"Собери свежие новости {hint} за последние сутки через веб-поиск и "
+                       "вызови ai_news_digest: 5–10 пунктов, каждый — суть одним предложением "
+                       "и ссылка на источник. Не повторяй одинаковое.",
+                       [], await self.agent_id(), emit)
+        text = md_to_tg_html("".join(parts).strip() or "Значимых новостей нет.")
+        await self._send(tg, "📰 <b>Дайджест новостей по ИИ</b>\n\n" + text)
+
+    async def _news_loop(self) -> None:
+        from datetime import datetime
+        last_date = None
+        while not self._stop:
+            try:
+                s = get_settings()
+                now = datetime.now()
+                if s.ai_news_enabled and now.hour == s.ai_news_hour and last_date != now.date():
+                    await self._run_news_digest()
+                    last_date = now.date()
+            except Exception:
+                log.exception("news digest error")
+            await asyncio.sleep(300)
+
     # ── уведомления о новых письмах ──────────────────────────────────────────
     def _owner_tg(self) -> int | None:
         """Кому слать личные уведомления (почта/дайджест) — владелец бота."""
@@ -493,6 +534,7 @@ class TelegramBot:
         log.info("telegram bot started (allow-list=%d)", len(self.allowmap))
         tasks = [asyncio.create_task(self._reminder_loop()),
                  asyncio.create_task(self._digest_loop()),
+                 asyncio.create_task(self._news_loop()),
                  asyncio.create_task(self._mail_loop())]
         try:
             while not self._stop:
