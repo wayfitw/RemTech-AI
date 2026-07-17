@@ -8,7 +8,7 @@ import base64
 from datetime import datetime, timezone
 from typing import Awaitable, Callable
 
-from agent.registry import needs_confirm, role_can_use_tool
+from agent.registry import PERSONAL_TOOLS, needs_confirm, role_can_use_tool
 from agent.registry import status_label as _tool_label
 from agent.tools import TOOLS
 from app import repositories as repo
@@ -230,7 +230,12 @@ class Orchestrator:
             {"type": "text", "text": sys_prompt or SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}},
             {"type": "text", "text": f"Сейчас: {datetime.now().strftime('%d.%m.%Y %H:%M, %A')}"},
         ]
-        tools = TOOLS if tool_names is None else [t for t in TOOLS if t.get("name") in tool_names]
+        # Дефолтный агент (без персоны) НЕ получает личные инструменты директора
+        # (почта/Telegram/напоминания) — чтобы веб-сотрудники их не видели.
+        if tool_names is None:
+            tools = [t for t in TOOLS if t.get("name") not in PERSONAL_TOOLS]
+        else:
+            tools = [t for t in TOOLS if t.get("name") in tool_names]
         # #35 — пер-инструментный RBAC: роль без доступа не видит инструмент вовсе.
         # roles=None → админ (полный доступ); иначе первая роль пользователя.
         user_role = "admin" if roles is None else (roles[0] if roles else "user")

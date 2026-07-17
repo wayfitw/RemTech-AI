@@ -67,6 +67,19 @@ def role_can_use_tool(role: str, name: str) -> bool:
     return role == "admin" or not allowed or role in allowed
 
 
+# Инструменты личного ассистента директора: работают с ЕГО почтой/Telegram/личным
+# контекстом. Доступны только его персоне (агент с явным списком), но НЕ дефолтному
+# агенту в вебе — иначе любой сотрудник читал бы почту/чаты директора. Веб-агенты
+# (Продажник и т.п.) их и так не содержат.
+PERSONAL_TOOLS: set[str] = {
+    "read_email",
+    "list_tg_chats", "read_tg_chat", "digest_tg_groups",
+    "add_digest_group", "remove_digest_group", "list_digest_groups",
+    "ai_news_digest",
+    "set_reminder", "list_reminders", "cancel_reminder",
+}
+
+
 # Issue #30 — инструменты с побочными/дорогими/исходящими действиями требуют
 # подтверждения пользователя ПЕРЕД выполнением. Признак ведётся здесь (в коде,
 # не в промпте — модель не должна «уговорить себя» пропустить шаг). Сюда же по
