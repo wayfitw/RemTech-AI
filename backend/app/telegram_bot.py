@@ -413,14 +413,16 @@ class TelegramBot:
         """Один утренний дайджест: модель собирает и резюмирует сообщения групп за
         ночь (через инструмент digest_tg_groups) и шлёт директору."""
         from services import telethon_svc
-        s = get_settings()
-        if not (s.tg_digest_group_list and telethon_svc.is_configured() and self.allowmap):
+        if not (telethon_svc.is_configured() and self.allowmap):
             return
         tg, username = next(iter(self.allowmap.items()))   # адресат — владелец бота
         async with SessionLocal() as s2:
             u = await repo.get_user_by_username(s2, username)
-        if not u or not u.active:
-            return
+            if not u or not u.active:
+                return
+            groups = [g.ref for g in await repo.list_digest_groups(s2, u.id)]
+        if not (groups or get_settings().tg_digest_group_list):
+            return   # нет групп для сводки — не шлём пустое
         user = {"user_id": u.id, "username": u.username,
                 "name": u.full_name or u.username, "role": u.role}
         parts: list[str] = []
@@ -440,11 +442,9 @@ class TelegramBot:
         last_date = None
         while not self._stop:
             try:
-                s = get_settings()
                 now = datetime.now()
-                if now.hour == s.tg_digest_hour and last_date != now.date() \
-                        and s.tg_digest_group_list:
-                    await self._run_digest()
+                if now.hour == get_settings().tg_digest_hour and last_date != now.date():
+                    await self._run_digest()   # сам проверит наличие групп
                     last_date = now.date()   # раз в сутки
             except Exception:
                 log.exception("digest error")

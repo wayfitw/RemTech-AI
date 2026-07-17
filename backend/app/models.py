@@ -221,3 +221,16 @@ class Reminder(Base):
     due_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), index=True)
     lead_pending: Mapped[list] = mapped_column(JSON, default=list)
     created_at: Mapped[dt.datetime] = _now_col()
+
+
+class DigestGroup(Base):
+    """Группа ТГ в утренней сводке пользователя (управляется из бота). ref — стабильный
+    идентификатор для чтения (id или @username), title — отображаемое имя."""
+    __tablename__ = "digest_groups"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    ref: Mapped[str] = mapped_column(String(200))
+    title: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[dt.datetime] = _now_col()

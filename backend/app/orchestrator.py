@@ -18,7 +18,7 @@ from app.database import SessionLocal
 from app.llm import gateway, resolve_route
 from app.logging_config import get_logger
 from app.state import make_state_store
-from services import docgen, mail_svc, replicate_svc, telethon_svc, websearch
+from services import docgen, mail_svc, replicate_svc, telethon_svc, weather_svc, websearch
 
 Emit = Callable[[dict], Awaitable[None]]
 settings = get_settings()
@@ -352,6 +352,10 @@ class Orchestrator:
             "list_tg_chats": self._t_list_tg_chats,
             "read_tg_chat": self._t_read_tg_chat,
             "digest_tg_groups": self._t_digest_tg_groups,
+            "add_digest_group": self._t_add_digest_group,
+            "remove_digest_group": self._t_remove_digest_group,
+            "list_digest_groups": self._t_list_digest_groups,
+            "get_weather": self._t_get_weather,
         }
 
     async def _execute_tool(self, name, params, emit, uid, cid, roles=None, sources=None):
@@ -597,10 +601,14 @@ class Orchestrator:
             return f"Чтение ТГ недоступно: {e}"
 
     async def _t_digest_tg_groups(self, params, emit, uid, cid, roles, sources):
-        groups = params.get("groups") or get_settings().tg_digest_group_list
+        groups = params.get("groups")
+        if not groups:   # свои сохранённые группы → иначе список из конфига
+            async with SessionLocal() as s:
+                groups = [g.ref for g in await repo.list_digest_groups(s, uid)]
+            groups = groups or get_settings().tg_digest_group_list
         if not groups:
-            return ("Список групп для сводки не задан. Укажи группы в запросе или в настройке "
-                    "TG_DIGEST_GROUPS.")
+            return ("Список групп для сводки пуст. Добавь группу: «добавь группу X в утреннюю "
+                    "сводку» — или укажи группы прямо в запросе.")
         if not telethon_svc.is_configured():
             return ("Чтение ТГ не настроено (нужны API_ID/API_HASH и вход по QR: "
                     "python -m scripts.telethon_login).")
@@ -608,6 +616,42 @@ class Orchestrator:
             return await telethon_svc.collect_digest(groups, params.get("hours", 12))
         except telethon_svc.TelethonError as e:
             return f"Чтение ТГ недоступно: {e}"
+
+    async def _t_add_digest_group(self, params, emit, uid, cid, roles, sources):
+        name = (params.get("group") or "").strip()
+        if not name:
+            return "Укажи название группы."
+        if not telethon_svc.is_configured():
+            return "Чтение ТГ не настроено (нужен вход: python -m scripts.telethon_login)."
+        try:
+            ref, title = await telethon_svc.find_dialog(name)
+        except telethon_svc.TelethonError as e:
+            return f"Не удалось найти группу: {e}"
+        async with SessionLocal() as s:
+            g = await repo.add_digest_group(s, uid, ref, title)
+            await s.commit()
+        return (f"Добавил «{title}» в утреннюю сводку." if g
+                else f"«{title}» уже в утренней сводке.")
+
+    async def _t_remove_digest_group(self, params, emit, uid, cid, roles, sources):
+        needle = (params.get("group") or "").strip()
+        async with SessionLocal() as s:
+            title = await repo.delete_digest_group(s, uid, needle)
+            await s.commit()
+        return f"Убрал «{title}» из утренней сводки." if title else "Такой группы в сводке нет."
+
+    async def _t_list_digest_groups(self, params, emit, uid, cid, roles, sources):
+        async with SessionLocal() as s:
+            rows = await repo.list_digest_groups(s, uid)
+        if not rows:
+            return "В утренней сводке пока нет групп. Добавь: «добавь группу X в сводку»."
+        return "Группы в утренней сводке:\n" + "\n".join(f"• {g.title}" for g in rows)
+
+    async def _t_get_weather(self, params, emit, uid, cid, roles, sources):
+        try:
+            return await asyncio.to_thread(weather_svc.get_weather, params.get("city", ""))
+        except weather_svc.WeatherError as e:
+            return f"Не удалось получить погоду: {e}"
 
     async def _t_read_doc(self, params, emit, uid, cid, roles, sources):
         cur = await self.state.get_docx(cid)

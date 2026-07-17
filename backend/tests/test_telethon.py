@@ -56,10 +56,12 @@ async def test_digest_tool_not_configured(monkeypatch):
     assert "не настроен" in res.lower()
 
 
-async def test_digest_tool_no_groups():
+async def test_digest_tool_no_groups(monkeypatch):
+    # нет явных групп, нет в БД (несуществующий uid), конфиг пуст → сообщение
+    monkeypatch.setattr(get_settings(), "tg_digest_groups", "")
     res = await orch.Orchestrator()._execute_tool(
-        "digest_tg_groups", {}, _noop, 1, None, None)
-    assert "групп" in res.lower() and "не задан" in res.lower()
+        "digest_tg_groups", {}, _noop, 987654321, None, None)
+    assert "групп" in res.lower() and "пуст" in res.lower()
 
 
 class _FakeDialog:

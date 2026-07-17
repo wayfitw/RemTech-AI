@@ -421,6 +421,51 @@ TOOLS = [
         },
     },
     {
+        "name": "add_digest_group",
+        "description": (
+            "Добавляет группу в утреннюю авто-сводку по её названию (найдёт среди чатов "
+            "пользователя). Используй, когда просят «добавь группу X в утреннюю сводку/дайджест»."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "group": {"type": "string", "description": "Название группы (можно часть)"},
+            },
+            "required": ["group"],
+        },
+    },
+    {
+        "name": "remove_digest_group",
+        "description": "Убирает группу из утренней авто-сводки (по названию или номеру).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "group": {"type": "string", "description": "Название/часть названия группы"},
+            },
+            "required": ["group"],
+        },
+    },
+    {
+        "name": "list_digest_groups",
+        "description": "Показывает группы, включённые в утреннюю авто-сводку.",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "get_weather",
+        "description": (
+            "Точная погода в городе: текущая + прогноз на 3 дня, из специализированного "
+            "источника. ВСЕГДА используй этот инструмент для погоды — НЕ веб-поиск (он даёт "
+            "неточные/устаревшие данные). Работает для городов России и мира."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "city": {"type": "string", "description": "Город, напр. «Красноярск»"},
+            },
+            "required": ["city"],
+        },
+    },
+    {
         "name": "digest_tg_groups",
         "description": (
             "Собирает сообщения из рабочих групп за последние N часов (по умолчанию из "

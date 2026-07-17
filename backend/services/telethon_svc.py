@@ -65,6 +65,28 @@ async def _resolve(client, target):
     raise TelethonError(f"чат/группа «{target}» не найдена среди твоих диалогов")
 
 
+async def find_dialog(name, *, client_factory=_client) -> tuple[str, str]:
+    """Находит диалог по названию и возвращает (ref, title): ref — стабильный id
+    строкой (или @username), title — отображаемое имя. Для добавления в сводку."""
+    client = await client_factory()
+    try:
+        tl = str(name).strip().lower()
+        best = None
+        async for d in client.iter_dialogs():
+            nm = d.name or ""
+            uname = getattr(getattr(d, "entity", None), "username", None)
+            ref = f"@{uname}" if uname else str(d.id)
+            if nm.lower() == tl:
+                return ref, nm
+            if best is None and tl in nm.lower():
+                best = (ref, nm)
+        if best is not None:
+            return best
+        raise TelethonError(f"группа «{name}» не найдена среди твоих чатов")
+    finally:
+        await client.disconnect()
+
+
 def _sender_name(msg) -> str:
     s = getattr(msg, "sender", None)
     if s is None:

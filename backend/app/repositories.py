@@ -13,6 +13,7 @@ from app.models import (
     Agent,
     ChatHistory,
     Conversation,
+    DigestGroup,
     KBChunk,
     KBDocument,
     ModelConfig,
@@ -460,3 +461,35 @@ async def delete_reminder(s, reminder_id: int, user_id: int) -> bool:
 async def all_reminders(s) -> list[Reminder]:
     """Все активные напоминания — для фоновой доставки заблаговременных сигналов."""
     return list(await s.scalars(select(Reminder)))
+
+
+# ── Группы ТГ в утренней сводке (управление из бота) ──────────────────────────
+
+async def add_digest_group(s, user_id: int, ref: str, title: str) -> DigestGroup | None:
+    """Добавляет группу в сводку пользователя (идемпотентно по ref). None — уже есть."""
+    exists = await s.scalar(select(DigestGroup).where(
+        DigestGroup.user_id == user_id, DigestGroup.ref == ref))
+    if exists:
+        return None
+    g = DigestGroup(user_id=user_id, ref=ref, title=title)
+    s.add(g)
+    await s.flush()
+    return g
+
+
+async def list_digest_groups(s, user_id: int) -> list[DigestGroup]:
+    return list(await s.scalars(
+        select(DigestGroup).where(DigestGroup.user_id == user_id).order_by(DigestGroup.id)))
+
+
+async def delete_digest_group(s, user_id: int, needle: str) -> str | None:
+    """Удаляет группу по ref, id или подстроке названия. Возвращает title удалённой."""
+    rows = await list_digest_groups(s, user_id)
+    n = str(needle).strip().lower()
+    match = next((g for g in rows if g.ref.lower() == n or str(g.id) == n
+                  or n in g.title.lower()), None)
+    if not match:
+        return None
+    title = match.title
+    await s.delete(match)
+    return title
