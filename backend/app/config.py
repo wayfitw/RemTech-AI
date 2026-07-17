@@ -60,6 +60,10 @@ class Settings(BaseSettings):
 
     # ── медиа ──────────────────────────────────────────────────────────────────
     replicate_api_token: str = ""
+    # Модель генерации изображений на Replicate. По умолчанию FLUX 1.1 Pro Ultra —
+    # топ фотореализма (4 Мп). Альтернативы: google/imagen-4, recraft-ai/recraft-v3,
+    # black-forest-labs/flux-1.1-pro. Редактирование картинок всегда через FLUX Kontext.
+    image_model: str = "black-forest-labs/flux-1.1-pro-ultra"
 
     # ── RAG / эмбеддинги ───────────────────────────────────────────────────────
     tei_url: str = ""                # TEI-реранкер (bge-reranker) на GPU (#39); пусто → одностадийный поиск

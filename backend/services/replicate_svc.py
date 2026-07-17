@@ -1,4 +1,5 @@
-"""Генерация изображений (FLUX Kontext Pro) и видео (Kling) через Replicate.
+"""Генерация изображений (модель из IMAGE_MODEL, по умолч. FLUX 1.1 Pro Ultra),
+редактирование (FLUX Kontext) и видео (Kling) через Replicate.
 Портировано из mybot/services/replicate_svc.py."""
 import asyncio
 import base64
@@ -42,19 +43,16 @@ def _read_output(output) -> bytes | None:
 def _generate_flux_sync(prompt: str) -> bytes | None:
     if not _client:
         return None
+    model = get_settings().image_model or "black-forest-labs/flux-1.1-pro-ultra"
+    # Общие для FLUX/Imagen/Recraft параметры; специфичные модели игнорируют лишнее
+    # не всегда, поэтому держим минимальный переносимый набор.
+    inp = {"prompt": prompt, "aspect_ratio": "1:1", "output_format": "jpg"}
+    if model.startswith("black-forest-labs/flux"):
+        inp["safety_tolerance"] = 2
     try:
-        output = _client.run(
-            "black-forest-labs/flux-kontext-pro",
-            input={
-                "prompt": prompt,
-                "output_format": "jpg",
-                "output_quality": 90,
-                "safety_tolerance": 2,
-            },
-        )
-        return _read_output(output)
+        return _read_output(_client.run(model, input=inp))
     except Exception:
-        log.exception("FLUX generate error")
+        log.exception("image generate error (model=%s)", model)
         return None
 
 
