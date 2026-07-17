@@ -267,7 +267,7 @@ async def api_create_subscription(req: TenderSubscriptionReq, admin: dict = Depe
 @router.delete("/tenders/subscriptions/{sub_id}")
 async def api_delete_subscription(sub_id: int, admin: dict = Depends(admin_user),
                                   db: AsyncSession = Depends(get_db)):
-    await repo.delete_subscription(db, sub_id)
+    await repo.delete_subscription(db, sub_id, is_admin=True)
     await db.commit()
     return {"ok": True}
 

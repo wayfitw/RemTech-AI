@@ -278,6 +278,52 @@ TOOLS = [
         },
     },
     {
+        "name": "save_tender_profile",
+        "description": (
+            "Сохраняет профиль поиска тендеров (критерии), чтобы по нему шёл периодический "
+            "авто-поиск с уведомлениями и можно было «искать сейчас». Используй, когда просят "
+            "«сохрани/запомни такой поиск тендеров». Доступ: закупки/руководство."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Название профиля"},
+                "keywords": {"type": "string", "description": "Ключевые слова предмета закупки"},
+                "region": {"type": "string", "description": "Регион (опц.)"},
+                "budget_min": {"type": "number", "description": "Мин. НМЦК, ₽ (опц.)"},
+                "budget_max": {"type": "number", "description": "Макс. НМЦК, ₽ (опц.)"},
+                "customer": {"type": "string", "description": "Заказчик, подстрока (опц.)"},
+            },
+            "required": ["name", "keywords"],
+        },
+    },
+    {
+        "name": "list_tender_profiles",
+        "description": "Показывает сохранённые профили поиска тендеров (свои; админ — все).",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "delete_tender_profile",
+        "description": "Удаляет сохранённый профиль поиска тендеров по номеру.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"profile_id": {"type": "integer", "description": "Номер профиля"}},
+            "required": ["profile_id"],
+        },
+    },
+    {
+        "name": "search_tender_profile",
+        "description": (
+            "«Искать сейчас» — мгновенный прогон поиска тендеров по сохранённому профилю "
+            "(по номеру или названию профиля)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"profile": {"type": "string", "description": "Номер или название профиля"}},
+            "required": ["profile"],
+        },
+    },
+    {
         "name": "analyze_procurement",
         "description": (
             "Предварительный анализ закупки: извлекает из карточки/извещения ЕИС предмет, "

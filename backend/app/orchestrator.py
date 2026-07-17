@@ -333,6 +333,10 @@ class Orchestrator:
             "read_url": self._t_read_url,
             "search_tenders": self._t_search_tenders,
             "analyze_procurement": self._t_analyze_procurement,
+            "save_tender_profile": self._t_save_tender_profile,
+            "list_tender_profiles": self._t_list_tender_profiles,
+            "delete_tender_profile": self._t_delete_tender_profile,
+            "search_tender_profile": self._t_search_tender_profile,
             "search_knowledge_base": self._t_search_knowledge_base,
             "generate_image": self._t_generate_image,
             "edit_image": self._t_edit_image,
@@ -423,6 +427,75 @@ class Orchestrator:
         lines.append("Далее: сверь требования с профилем «Ремтехники» через "
                      "search_knowledge_base и дай честный вердикт соответствия.")
         return _wrap_untrusted("карточка закупки ЕИС", "\n".join(lines))
+
+    # ── Профили тендеров (#44) — сохранение + авто-поиск + «искать сейчас» ────
+    async def _t_save_tender_profile(self, params, emit, uid, cid, roles, sources):
+        name = (params.get("name") or "").strip()
+        kw = (params.get("keywords") or "").strip()
+        if not name or not kw:
+            return "Нужны название профиля и ключевые слова."
+        role = "руководство" if roles is None else (roles[0] if roles else "закупки")
+        def _int(v):
+            try:
+                return int(v)
+            except (TypeError, ValueError):
+                return None
+        async with SessionLocal() as s:
+            sub = await repo.create_subscription(
+                s, name, kw, region=(params.get("region") or None),
+                budget_min=_int(params.get("budget_min")), budget_max=_int(params.get("budget_max")),
+                customer=(params.get("customer") or None), recipient_roles=role, owner_id=uid)
+            await s.commit()
+            pid = sub.id
+        return (f"Профиль тендеров #{pid} «{name}» сохранён. По нему пойдёт периодический "
+                "авто-поиск с уведомлениями; для мгновенного прогона — «искать сейчас по профилю».")
+
+    async def _t_list_tender_profiles(self, params, emit, uid, cid, roles, sources):
+        async with SessionLocal() as s:
+            subs = await repo.list_subscriptions_for_user(s, uid, is_admin=(roles is None))
+        if not subs:
+            return "Сохранённых профилей тендеров нет. Создай: «сохрани поиск тендеров …»."
+        lines = []
+        for sub in subs:
+            crit = [sub.keywords]
+            if sub.region:
+                crit.append(f"регион: {sub.region}")
+            if sub.budget_max:
+                crit.append(f"до {sub.budget_max:,} ₽".replace(",", " "))
+            if sub.customer:
+                crit.append(f"заказчик: {sub.customer}")
+            lines.append(f"#{sub.id} «{sub.name}» — " + "; ".join(crit))
+        return "Профили тендеров:\n" + "\n".join(lines)
+
+    async def _t_delete_tender_profile(self, params, emit, uid, cid, roles, sources):
+        pid = params.get("profile_id")
+        async with SessionLocal() as s:
+            ok = (await repo.delete_subscription(s, int(pid), owner_id=uid, is_admin=(roles is None))
+                  if pid is not None else False)
+            await s.commit()
+        return f"Профиль #{pid} удалён." if ok else "Профиль не найден или нет прав на удаление."
+
+    async def _t_search_tender_profile(self, params, emit, uid, cid, roles, sources):
+        from services import tenders
+        needle = str(params.get("profile") or "").strip().lower()
+        async with SessionLocal() as s:
+            subs = await repo.list_subscriptions_for_user(s, uid, is_admin=(roles is None))
+        sub = next((x for x in subs if str(x.id) == needle or needle in x.name.lower()), None)
+        if not sub:
+            return "Профиль не найден. Посмотри список: list_tender_profiles."
+        try:
+            rows = await asyncio.to_thread(
+                tenders.search_tenders, sub.keywords, sub.region or "", sub.customer or "",
+                sub.budget_min, sub.budget_max)
+        except tenders.TenderSourceError as e:
+            return f"Источник закупок (ЕИС) недоступен: {e}."
+        if not rows:
+            return f"По профилю «{sub.name}» закупок не найдено."
+        lines = [f"• №{r['number']} — {r['name'][:60]} — "
+                 f"{int(r['price']) if r.get('price') else '?'} ₽ (до {r['deadline'] or '?'})\n  {r['link']}"
+                 for r in rows[:10]]
+        return _wrap_untrusted("ЕИС zakupki.gov.ru",
+                               f"По профилю «{sub.name}» найдено {len(rows)}:\n" + "\n".join(lines))
 
     async def _t_search_knowledge_base(self, params, emit, uid, cid, roles, sources):
         from app import kb

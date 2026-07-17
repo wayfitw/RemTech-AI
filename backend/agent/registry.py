@@ -26,6 +26,10 @@ TOOL_META: dict[str, tuple[str, str]] = {
     "fill_template":         ("📋 Заполняю шаблон...",         "Заполнить шаблон"),
     "search_tenders":        ("📈 Ищу тендеры на ЕИС...",      "Поиск тендеров"),
     "analyze_procurement":   ("🧾 Анализирую закупку...",      "Анализ закупки"),
+    "save_tender_profile":   ("💾 Сохраняю профиль тендеров...", "Сохранить профиль тендеров"),
+    "list_tender_profiles":  ("📋 Профили тендеров...",         "Профили тендеров"),
+    "delete_tender_profile": ("🗑 Удаляю профиль тендеров...",   "Удалить профиль тендеров"),
+    "search_tender_profile": ("📈 Ищу по профилю...",           "Искать по профилю"),
     "set_reminder":          ("⏰ Ставлю напоминание...",       "Поставить напоминание"),
     "list_reminders":        ("📋 Смотрю напоминания...",       "Список напоминаний"),
     "cancel_reminder":       ("🗑 Отменяю напоминание...",       "Отменить напоминание"),
@@ -50,6 +54,10 @@ TOOL_META: dict[str, tuple[str, str]] = {
 TOOL_ROLES: dict[str, set[str]] = {
     "search_tenders": {"закупки", "руководство"},
     "analyze_procurement": {"закупки", "руководство"},
+    "save_tender_profile": {"закупки", "руководство"},
+    "list_tender_profiles": {"закупки", "руководство"},
+    "delete_tender_profile": {"закупки", "руководство"},
+    "search_tender_profile": {"закупки", "руководство"},
     "create_contract": {"продажи", "руководство"},
 }
 

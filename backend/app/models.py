@@ -167,10 +167,13 @@ class Agent(Base):
 
 # ── Issue #37 (TASK-0802) — уведомления о новых тендерах ──────────────────────
 class TenderSubscription(Base):
-    """Сохранённый критерий поиска закупок + получатели. Настраивает администратор."""
+    """Сохранённый критерий поиска закупок + получатели (профиль тендеров, #37/#44).
+    user_id — владелец профиля (свои профили; admin видит все); NULL — админ-профиль."""
     __tablename__ = "tender_subscriptions"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(200))
     keywords: Mapped[str] = mapped_column(Text)
     region: Mapped[str | None] = mapped_column(String(200))

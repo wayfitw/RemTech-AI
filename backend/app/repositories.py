@@ -375,10 +375,11 @@ iso = _iso
 # ── Issue #37 (TASK-0802) — подписки на тендеры, дедуп, уведомления ───────────
 async def create_subscription(s, name, keywords, region=None, budget_min=None,
                               budget_max=None, customer=None,
-                              recipient_roles="закупки") -> TenderSubscription:
+                              recipient_roles="закупки", owner_id=None) -> TenderSubscription:
     sub = TenderSubscription(
         name=name, keywords=keywords, region=region, budget_min=budget_min,
-        budget_max=budget_max, customer=customer, recipient_roles=recipient_roles)
+        budget_max=budget_max, customer=customer, recipient_roles=recipient_roles,
+        user_id=owner_id)
     s.add(sub)
     await s.flush()
     return sub
@@ -391,9 +392,25 @@ async def list_subscriptions(s, only_active=True) -> list[TenderSubscription]:
     return list((await s.execute(stmt.order_by(TenderSubscription.id))).scalars())
 
 
-async def delete_subscription(s, sub_id: int) -> None:
+async def list_subscriptions_for_user(s, user_id: int, is_admin: bool = False
+                                      ) -> list[TenderSubscription]:
+    """Профили пользователя (свои); admin видит все."""
+    stmt = select(TenderSubscription)
+    if not is_admin:
+        stmt = stmt.where(TenderSubscription.user_id == user_id)
+    return list((await s.execute(stmt.order_by(TenderSubscription.id))).scalars())
+
+
+async def delete_subscription(s, sub_id: int, owner_id=None, is_admin=False) -> bool:
+    """Удаляет профиль. Без прав владельца/админа не трогает чужой. True — удалено."""
+    sub = await s.get(TenderSubscription, sub_id)
+    if not sub:
+        return False
+    if not is_admin and sub.user_id != owner_id:
+        return False
     await s.execute(delete(TenderSeen).where(TenderSeen.subscription_id == sub_id))
     await s.execute(delete(TenderSubscription).where(TenderSubscription.id == sub_id))
+    return True
 
 
 async def mark_tender_seen(s, subscription_id: int, reg_number: str) -> bool:
