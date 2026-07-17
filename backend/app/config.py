@@ -125,6 +125,7 @@ class Settings(BaseSettings):
     gmail_imap_password: str = ""
     yandex_imap_user: str = ""
     yandex_imap_password: str = ""
+    mail_poll_seconds: int = 120   # как часто проверять новые письма для уведомлений
 
     # ── Telethon (чтение ТГ-чатов от лица пользователя) ─────────────────────────
     # api_id/api_hash — с my.telegram.org; telethon_session — StringSession (создаётся

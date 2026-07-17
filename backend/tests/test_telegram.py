@@ -246,6 +246,20 @@ async def test_bot_sends_generated_image(session, monkeypatch):
     assert sent == [{"method": "sendPhoto", "field": "photo", "name": "pic.jpg"}]
 
 
+def test_owner_tg():
+    # адресат личных уведомлений — первый в allow-list; пусто → None
+    assert TelegramBot(FakeTransport(), allowmap={5: "a", 6: "b"})._owner_tg() == 5
+    assert TelegramBot(FakeTransport(), allowmap={})._owner_tg() is None
+
+
+async def test_bot_notifies_new_email():
+    tx = FakeTransport()
+    bot = TelegramBot(tx, allowmap={777: "boss"})
+    await bot._notify_email("gmail", {"from": "Иван", "subject": "Счёт", "snippet": "оплатите"})
+    texts = tx.sent_texts()
+    assert texts and "Новое письмо" in texts[0] and "Gmail" in texts[0] and "Счёт" in texts[0]
+
+
 async def test_bot_accepts_incoming_document(session, monkeypatch):
     # присланный файл → бот скачивает, сохраняет и передаёт ходу вложением
     _bind_test_db(monkeypatch)

@@ -450,10 +450,50 @@ class TelegramBot:
                 log.exception("digest error")
             await asyncio.sleep(300)   # проверка раз в 5 минут
 
+    # ── уведомления о новых письмах ──────────────────────────────────────────
+    def _owner_tg(self) -> int | None:
+        """Кому слать личные уведомления (почта/дайджест) — владелец бота."""
+        return next(iter(self.allowmap), None)
+
+    async def _notify_email(self, source: str, e: dict) -> None:
+        tg = self._owner_tg()
+        if tg is None:
+            return
+        label = {"gmail": "Gmail", "yandex": "Яндекс"}.get(source, source)
+        txt = (f"📧 <b>Новое письмо ({label})</b>\n"
+               f"От: {esc(e.get('from') or e.get('email') or '?')}\n"
+               f"Тема: {esc(e.get('subject') or '(без темы)')}")
+        if e.get("snippet"):
+            txt += f"\n\n{esc(e['snippet'][:200])}"
+        await self._send(tg, txt)
+
+    async def _mail_loop(self) -> None:
+        """Пуш-уведомления о новых письмах. На старте берём текущий максимум UID
+        (не спамим старым), далее шлём только письма новее последнего виденного."""
+        from services import mail_svc
+        last: dict[str, int] = {}
+        for src in ("gmail", "yandex"):
+            if mail_svc.is_configured(src):
+                try:
+                    last[src] = await asyncio.to_thread(mail_svc.newest_uid, src)
+                except Exception:
+                    log.exception("mail baseline %s", src)
+        while not self._stop:
+            for src in list(last):
+                try:
+                    new_max, emails = await asyncio.to_thread(mail_svc.fetch_new, src, last[src])
+                    for e in emails:
+                        await self._notify_email(src, e)
+                    last[src] = new_max
+                except Exception:
+                    log.exception("mail poll %s", src)
+            await asyncio.sleep(max(30, get_settings().mail_poll_seconds))
+
     async def run(self) -> None:
         log.info("telegram bot started (allow-list=%d)", len(self.allowmap))
         tasks = [asyncio.create_task(self._reminder_loop()),
-                 asyncio.create_task(self._digest_loop())]
+                 asyncio.create_task(self._digest_loop()),
+                 asyncio.create_task(self._mail_loop())]
         try:
             while not self._stop:
                 try:
