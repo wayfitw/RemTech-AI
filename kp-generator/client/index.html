@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ремтехника — Генератор КП</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<header class="app-header">
+  <div class="header-inner">
+    <span class="logo">РЕМТЕХНИКА</span>
+    <span class="header-subtitle">Генератор коммерческих предложений</span>
+  </div>
+</header>
+
+<div class="steps-bar">
+  <div class="step-indicator active" id="ind-1"><span class="step-num">1</span><span class="step-label">Загрузка</span></div>
+  <div class="step-divider"></div>
+  <div class="step-indicator" id="ind-2"><span class="step-num">2</span><span class="step-label">Конструктор</span></div>
+  <div class="step-divider"></div>
+  <div class="step-indicator" id="ind-3"><span class="step-num">3</span><span class="step-label">Скачивание</span></div>
+</div>
+
+<main class="main-content">
+
+  <!-- ══════════════ ШАГ 1 ══════════════ -->
+  <section id="step1" class="step active">
+    <div class="card">
+      <h2>Загрузка документа поставщика</h2>
+
+      <div class="form-grid-3">
+        <div class="form-group">
+          <label for="clientName">Наименование клиента <span class="req">*</span></label>
+          <input type="text" id="clientName" placeholder="ГМК «Норильский никель»" />
+        </div>
+        <div class="form-group">
+          <label for="managerName">Имя менеджера</label>
+          <input type="text" id="managerName" placeholder="Дашук Дмитрий" />
+        </div>
+        <div class="form-group">
+          <label for="managerPhone">Телефон менеджера</label>
+          <input type="text" id="managerPhone" placeholder="8-965-893-17-17" />
+        </div>
+      </div>
+
+      <div class="drop-zone" id="dropZone">
+        <div class="drop-icon">📄</div>
+        <div class="drop-title">Перетащите файл сюда</div>
+        <div class="drop-sub">PDF или DOCX, до 30 МБ</div>
+        <button class="btn-outline" id="browseBtn">Выбрать файл</button>
+        <input type="file" id="fileInput" accept=".pdf,.docx,.doc" hidden />
+      </div>
+      <div class="file-chosen" id="fileChosen" hidden>
+        <span id="fileChosenName"></span>
+        <button class="btn-link" id="fileClearBtn">✕ убрать</button>
+      </div>
+
+      <div class="or-divider"><span>или</span></div>
+
+      <div class="form-group">
+        <label for="manualText">Вставить текст КП вручную</label>
+        <textarea id="manualText" rows="8" placeholder="Вставьте текст коммерческого предложения поставщика..."></textarea>
+      </div>
+
+      <div id="step1Error" class="error-msg" hidden></div>
+
+      <div class="actions">
+        <button class="btn-primary" id="extractBtn">
+          <span class="btn-text">Анализировать</span>
+          <span class="btn-loader">AI анализирует документ...</span>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════ ШАГ 2 ══════════════ -->
+  <section id="step2" class="step" hidden>
+    <div class="card">
+      <div class="step2-top">
+        <div>
+          <h2>Конструктор блоков</h2>
+          <p class="hint">AI создал блоки из документа. Каждый блок = один слайд. Перетащите ⠿ для изменения порядка, смените тип (Фото/Таблица/Текст) — данные не потеряются. Фото-блоки появляются только для PDF с изображениями — для DOCX добавьте фото вручную через «+ Добавить блок».</p>
+        </div>
+        <div class="meta-fields">
+          <div class="meta-row">
+            <label>Бренд техники</label>
+            <input type="text" id="e-brand" placeholder="KOMATSU" />
+          </div>
+          <div class="meta-row">
+            <label>Название техники</label>
+            <input type="text" id="e-name" placeholder="Автогрейдер GD825A-2" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Список блоков -->
+      <div id="blocksContainer"></div>
+
+      <button class="btn-add-block" id="addBlockBtn">+ Добавить блок вручную</button>
+
+      <!-- Фиксированный блок: Цена и условия -->
+      <div class="block-item block-price">
+        <div class="block-header-price">
+          <span class="block-price-title">💰 Цена и условия</span>
+          <span class="badge-fixed">фиксированный · всегда последний слайд</span>
+        </div>
+        <div class="price-content">
+          <div class="form-grid-2">
+            <div class="form-group">
+              <label>Гарантия</label>
+              <input type="text" id="e-warranty" placeholder="12 месяцев" />
+            </div>
+            <div class="form-group">
+              <label>Наличие / срок поставки</label>
+              <input type="text" id="e-availability" placeholder="В наличии, г. Красноярск" />
+            </div>
+            <div class="form-group">
+              <label>Цена</label>
+              <input type="text" id="e-price" placeholder="7 200 000 руб. с НДС 20%" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Условия оплаты</label>
+            <textarea id="e-paymentTerms" rows="3" placeholder="Аванс 30%&#10;Оплата 70% после подписания акта"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- Нам доверяют -->
+      <div class="section-block">
+        <div class="section-hd">Нам доверяют</div>
+        <div style="padding:12px 14px">
+          <textarea id="e-trustedBy" rows="2"></textarea>
+        </div>
+      </div>
+
+      <div id="step2Error" class="error-msg" hidden></div>
+
+      <div class="actions">
+        <button class="btn-secondary" onclick="goToStep(1)">← Назад</button>
+        <button class="btn-primary" id="generateBtn">
+          <span class="btn-text">Сгенерировать КП</span>
+          <span class="btn-loader">Создаём презентацию...</span>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════ ШАГ 3 ══════════════ -->
+  <section id="step3" class="step" hidden>
+    <div class="card">
+      <div class="success-icon">✅</div>
+      <h2>КП готово!</h2>
+      <div class="preview-box" id="previewBox"></div>
+      <div class="actions actions-center">
+        <a class="btn-primary btn-download" id="downloadLink" href="#">⬇ Скачать PPTX</a>
+        <button class="btn-secondary" onclick="resetAndGoToStep1()">← Новое КП</button>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
