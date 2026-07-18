@@ -1051,3 +1051,9 @@ def create_presentation(spec: dict) -> bytes:
     out = io.BytesIO()
     prs.save(out)
     return out.getvalue()
+
+
+# TASK-0507 (#45) — КП-презентация на технику (PPTX). Вынесена в отдельный модуль
+# (объёмная раскладка), доступна как docgen.create_proposal_pptx для симметрии с
+# create_proposal / create_proposal_pdf.
+from services.proposal_pptx import create_proposal_pptx  # noqa: E402,F401

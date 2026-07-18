@@ -350,6 +350,7 @@ class Orchestrator:
             "create_pdf": self._t_create_pdf,
             "create_presentation": self._t_create_presentation,
             "create_proposal": self._t_create_proposal,
+            "create_proposal_pptx": self._t_create_proposal_pptx,
             "analyze_spec": self._t_analyze_spec,
             "create_estimate": self._t_create_estimate,
             "fill_template": self._t_fill_template,
@@ -632,6 +633,25 @@ class Orchestrator:
             made.append("PDF")
         items = params.get("items") or []
         return f"КП «{base}» создано в {' и '.join(made)} ({len(items)} позиций) и отправлено пользователю."
+
+    async def _t_create_proposal_pptx(self, params, emit, uid, cid, roles, sources):
+        # Фото техники — реальные из папки-ассетов по ключу image_asset (безопасно:
+        # контролируемая папка, а не произвольный путь). Нет фото → плейсхолдер.
+        blocks = []
+        for b in params.get("blocks") or []:
+            b = dict(b)
+            key = b.pop("image_asset", None)
+            if key and (b.get("type") or "").lower() in ("split", "photo"):
+                img = assets.find_photo(key)
+                if img:
+                    b["_image"] = img
+            blocks.append(b)
+        spec = {**params, "blocks": blocks}
+        data = await asyncio.to_thread(docgen.create_proposal_pptx, spec)
+        fname = (params.get("filename") or params.get("name") or "КП") + ".pptx"
+        await self._save_file(uid, cid, fname, data, "pptx", emit, "document")
+        n = len(blocks) + 1   # +1 — авто-слайд цены
+        return f"КП-презентация «{fname}» создана ({n} слайдов) и отправлена пользователю."
 
     async def _t_analyze_spec(self, params, emit, uid, cid, roles, sources):
         d = await asyncio.to_thread(docgen.create_spec_report, params)

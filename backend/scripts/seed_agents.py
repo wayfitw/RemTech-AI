@@ -30,8 +30,8 @@ AGENTS = [
             "и запчасти, готовишь коммерческие предложения и сметы. Цены и наличие ВСЕГДА бери "
             "из базы знаний (search_knowledge_base); нет данных — честно скажи, не выдумывай. "
             "«Сделай КП» → create_proposal, «смета/расчёт» → create_estimate. Кратко, по-деловому."),
-        "tools": ["search_knowledge_base", "create_proposal", "create_estimate",
-                  "create_docx", "read_doc", "apply_doc_edits", "fill_template",
+        "tools": ["search_knowledge_base", "create_proposal", "create_proposal_pptx",
+                  "create_estimate", "create_docx", "read_doc", "apply_doc_edits", "fill_template",
                   "generate_image", "edit_image", "generate_video"],
         "allowed_roles": "",
     },

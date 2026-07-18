@@ -20,6 +20,7 @@ TOOL_META: dict[str, tuple[str, str]] = {
     "create_pdf":            ("📄 Создаю PDF...",              "Создать PDF"),
     "create_presentation":   ("📽 Готовлю презентацию...",    "Генератор презентаций"),
     "create_proposal":       ("📑 Готовлю КП...",             "Генератор КП"),
+    "create_proposal_pptx":  ("📽 Готовлю КП-презентацию...", "КП-презентация (PPTX)"),
     "create_estimate":       ("📊 Считаю смету...",           "Excel-смета"),
     "analyze_spec":          ("🔍 Анализирую ТЗ...",          "Анализ ТЗ"),
     "read_doc":              ("📖 Читаю документ...",          "Читать документ"),
@@ -60,6 +61,7 @@ TOOL_ROLES: dict[str, set[str]] = {
     "delete_tender_profile": {"закупки", "руководство"},
     "search_tender_profile": {"закупки", "руководство"},
     "create_contract": {"продажи", "руководство"},
+    "create_proposal_pptx": {"продажи", "руководство"},
 }
 
 

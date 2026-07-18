@@ -321,6 +321,74 @@ def test_assets_find_photo(tmp_path, monkeypatch):
     assert set(assets_mod.list_assets()) == {"xcmg-xe215.jpg", "liugong_856h.png"}
 
 
+def test_create_proposal_pptx_is_valid():
+    # #45 — КП-презентация: обложка + слайды блоков + авто-слайд цены; бренд/реквизиты
+    from pptx import Presentation
+    data = {
+        "name": "Экскаватор XCMG XE215C", "brand": "XCMG", "manager": "Иван Петров",
+        "client_name": "ООО «Стройка»", "price": "9 850 000 ₽",
+        "payment_terms": ["50% аванс", "50% по факту"],
+        "blocks": [
+            {"type": "title", "title": "Экскаватор XCMG XE215C", "text": "масса 21.5 т"},
+            {"type": "split", "rows": [["ДВИГАТЕЛЬ", None], ["Мощность", "118 кВт"]]},
+            {"type": "table", "title": "Комплектация", "rows": [["Кондиционер", "есть"]]},
+            {"type": "text", "title": "Преимущества", "text": "Надёжный двигатель."},
+        ],
+    }
+    out = docgen.create_proposal_pptx(data)
+    assert out[:2] == b"PK" and len(out) > 5000
+    prs = Presentation(io.BytesIO(out))
+    assert len(prs.slides._sldIdLst) == 5              # 4 блока + слайд цены
+    text = " ".join(sh.text_frame.text for s in prs.slides for sh in s.shapes if sh.has_text_frame)
+    assert "КОММЕРЧЕСКОЕ ПРЕДЛОЖЕНИЕ" in text and "XCMG XE215C" in text
+    assert "118 кВт" in text and "СТОИМОСТЬ" in text and "9 850 000" in text
+    assert "2447007401" in text                        # ИНН «Ремтехники» из docx_style
+
+
+def test_create_proposal_pptx_empty_blocks_has_price():
+    # без блоков — всё равно валидный файл со слайдом цены
+    from pptx import Presentation
+    out = docgen.create_proposal_pptx({"name": "Погрузчик", "blocks": []})
+    prs = Presentation(io.BytesIO(out))
+    assert len(prs.slides._sldIdLst) == 1              # только авто-слайд цены
+
+
+async def test_create_proposal_pptx_tool(monkeypatch):
+    # проводка инструмента + резолв image_asset из папки-ассетов
+    import app.orchestrator as orch
+    from pptx import Presentation
+    captured = {}
+
+    async def fake_save(self, uid, cid, name, data, kind, emit, etype):
+        captured.update(name=name, data=data, kind=kind)
+
+    monkeypatch.setattr(orch.Orchestrator, "_save_file", fake_save)
+    monkeypatch.setattr(orch.assets, "find_photo", lambda k: _png_bytes() if k else None)
+
+    async def emit(_e):
+        pass
+    res = await orch.Orchestrator()._execute_tool(
+        "create_proposal_pptx",
+        {"name": "Экскаватор", "filename": "КП_XE215",
+         "blocks": [{"type": "title", "title": "Экскаватор"},
+                    {"type": "split", "image_asset": "XCMG XE215",
+                     "rows": [["Мощность", "118 кВт"]]}]},
+        emit, 1, None, None)
+    assert "3 слайдов" in res                           # 2 блока + слайд цены
+    assert captured["name"] == "КП_XE215.pptx" and captured["kind"] == "pptx"
+    prs = Presentation(io.BytesIO(captured["data"]))
+    pics = sum(1 for s in prs.slides for sh in s.shapes if sh.shape_type == 13)
+    assert pics == 1                                    # фото подставлено из ассетов
+
+
+def test_create_proposal_pptx_rbac():
+    from agent.registry import role_can_use_tool
+    assert role_can_use_tool("продажи", "create_proposal_pptx") is True
+    assert role_can_use_tool("руководство", "create_proposal_pptx") is True
+    assert role_can_use_tool("admin", "create_proposal_pptx") is True
+    assert role_can_use_tool("закупки", "create_proposal_pptx") is False
+
+
 def test_detect_kind():
     assert detect_kind("a.docx") == "docx"
     assert detect_kind("b.PDF") == "pdf"

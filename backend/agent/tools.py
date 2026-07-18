@@ -220,6 +220,56 @@ TOOLS = [
         },
     },
     {
+        "name": "create_proposal_pptx",
+        "description": (
+            "Создаёт КП-ПРЕЗЕНТАЦИЮ на технику (.pptx) в фирменном стиле «Ремтехники» — "
+            "обложка, слайд «фото + характеристики», доп. слайды (таблица/текст/фото) и "
+            "автоматический слайд «цена и условия». Используй, когда просят КП именно как "
+            "ПРЕЗЕНТАЦИЮ/слайды на конкретную единицу техники (в отличие от create_proposal — "
+            "счётоподобного КП в Word/PDF со списком позиций и наценкой). Характеристики, "
+            "цену, гарантию бери из базы знаний (search_knowledge_base) или из документа "
+            "поставщика/запроса; чего нет — не выдумывай. Для фото техники укажи image_asset "
+            "(ключ реального фото); нет фото — будет аккуратный плейсхолдер."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "filename": {"type": "string", "description": "Имя файла без расширения"},
+                "name": {"type": "string", "description": "Модель техники (строка на слайдах), напр. «Экскаватор XCMG XE215C»"},
+                "brand": {"type": "string", "description": "Бренд (в шапке справа), напр. XCMG"},
+                "client_name": {"type": "string", "description": "Клиент — «Подготовлено для» на обложке"},
+                "manager": {"type": "string", "description": "Менеджер (на слайде цены)"},
+                "phone": {"type": "string", "description": "Телефон менеджера"},
+                "warranty": {"type": "string", "description": "Гарантия, напр. «12 месяцев»"},
+                "availability": {"type": "string", "description": "Наличие / срок поставки"},
+                "price": {"type": "string", "description": "Стоимость (строкой, с валютой)"},
+                "payment_terms": {"type": "array", "items": {"type": "string"}, "description": "Условия оплаты, по пунктам"},
+                "trusted_by": {"type": "string", "description": "Строка «Нам доверяют» (опц.; есть дефолт)"},
+                "blocks": {
+                    "type": "array",
+                    "description": "Слайды по порядку (обложку добавь первым блоком type=title; слайд цены добавляется сам)",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "type": {"type": "string", "enum": ["title", "split", "table", "photo", "text"],
+                                     "description": "title — обложка; split — фото+характеристики; table — таблица; photo — фото; text — текст"},
+                            "title": {"type": "string", "description": "Заголовок слайда / модель на обложке"},
+                            "text": {"type": "string", "description": "Текст (для title — строка характеристик; для text — абзац)"},
+                            "rows": {
+                                "type": "array",
+                                "description": "Строки для split/table: [параметр, значение]. Для split подзаголовок секции — [\"НАЗВАНИЕ\", null]",
+                                "items": {"type": "array", "items": {"type": ["string", "null"]}},
+                            },
+                            "image_asset": {"type": "string", "description": "Ключ реального фото техники для split/photo (напр. «XCMG XE215»)"},
+                        },
+                        "required": ["type"],
+                    },
+                },
+            },
+            "required": ["name", "blocks"],
+        },
+    },
+    {
         "name": "read_doc",
         "description": (
             "Читает структуру загруженного Word-документа (.docx) и возвращает список "
