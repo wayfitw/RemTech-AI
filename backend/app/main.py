@@ -23,7 +23,7 @@ from app.deps import (  # noqa: F401
     embedder_dep,
     role_can_use_agent,
 )
-from app.routers import admin, auth, chat, files, kb, ws
+from app.routers import admin, auth, chat, files, kb, proposals, ws
 
 settings = get_settings()
 
@@ -72,7 +72,8 @@ async def _csrf_guard(request: Request, call_next):
     return await call_next(request)
 
 
-for _router in (auth.router, chat.router, files.router, admin.router, kb.router, ws.router):
+for _router in (auth.router, chat.router, files.router, admin.router, kb.router,
+                proposals.router, ws.router):
     app.include_router(_router)
 
 # Раздача собранного фронта тем же процессом (single-origin: /, /api, /ws на одном
