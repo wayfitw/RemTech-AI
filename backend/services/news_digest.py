@@ -63,7 +63,9 @@ async def _llm_collect(user: dict, agent_id) -> str:
         if ev.get("type") == "delta":
             parts.append(ev.get("text", ""))
 
-    await run_turn(user, None, _prompt(get_settings().ai_news_topic_list), [], agent_id, emit)
+    # channel=telegram — служебный диалог дайджеста не должен светиться в веб-истории
+    await run_turn(user, None, _prompt(get_settings().ai_news_topic_list), [], agent_id, emit,
+                   channel="telegram")
     return "".join(parts).strip()
 
 

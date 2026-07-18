@@ -380,3 +380,16 @@ async def test_admin_news_digest_manual_run(client, monkeypatch):
 async def test_admin_news_digest_requires_admin(client):
     # эндпоинт под admin_user: без токена — 401
     assert (await client.post("/api/admin/news/digest")).status_code == 401
+
+
+async def test_conversation_channel_isolation(session):
+    # тг-тг, веб-веб: list_conversations(channel="web") не отдаёт telegram-диалоги
+    from app import repositories as repo
+    u = await repo.create_user(session, "seller2", "h$1", role="продажи")
+    await repo.create_conversation(session, u.id, "веб-чат", channel="web")
+    await repo.create_conversation(session, u.id, "тг-чат", channel="telegram")
+    await session.commit()
+    web = await repo.list_conversations(session, u.id, channel="web")
+    everything = await repo.list_conversations(session, u.id)
+    assert [c.title for c in web] == ["веб-чат"]        # веб видит только свой канал
+    assert len(everything) == 2                          # без фильтра — оба

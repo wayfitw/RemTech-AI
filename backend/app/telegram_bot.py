@@ -312,7 +312,8 @@ class TelegramBot:
 
         try:
             cid = await run_turn(user, self._conv.get(chat_id), text, file_ids or [],
-                                 await self.agent_id(), emit, audio=audio, audio_mime="audio/ogg")
+                                 await self.agent_id(), emit, audio=audio, audio_mime="audio/ogg",
+                                 channel="telegram")
             self._conv[chat_id] = cid
         except Exception:
             log.exception("telegram turn failed chat=%s", chat_id)

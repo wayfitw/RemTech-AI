@@ -46,9 +46,11 @@ async def _resolve_attachments(s, uid: int, file_ids: list) -> list[dict]:
 
 
 async def run_turn(user: dict, conversation_id, text: str, file_ids, agent_id, emit,
-                   audio: bytes | None = None, audio_mime: str = "") -> int | None:
+                   audio: bytes | None = None, audio_mime: str = "",
+                   channel: str = "web") -> int | None:
     """Прогоняет один ход пользователя и шлёт доменные события через emit.
-    Возвращает conversation_id (может быть создан новый). Канал-независимо."""
+    Возвращает conversation_id (может быть создан новый). channel («web»/«telegram»)
+    проставляется НОВОМУ диалогу — для изоляции историй по каналу (тг-тг, веб-веб)."""
     uid = user["user_id"]
 
     # #32/#34 — опциональный STT-хук: голосовой ввод → текст (по умолчанию выключен)
@@ -61,7 +63,7 @@ async def run_turn(user: dict, conversation_id, text: str, file_ids, agent_id, e
 
     async with SessionLocal() as s:
         if not conversation_id:
-            conv = await repo.create_conversation(s, uid, (text or "Новый чат")[:60])
+            conv = await repo.create_conversation(s, uid, (text or "Новый чат")[:60], channel=channel)
             await s.commit()
             conversation_id = conv.id
             await emit({"type": "conversation", "id": conversation_id, "title": conv.title})

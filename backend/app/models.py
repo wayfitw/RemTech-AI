@@ -54,6 +54,9 @@ class Conversation(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     title: Mapped[str] = mapped_column(String(200), default="Новый чат")
+    # Канал происхождения диалога: "web" | "telegram". Изоляция историй по каналу —
+    # веб показывает только web-диалоги, бот ведёт свои (тг-тг, веб-веб).
+    channel: Mapped[str] = mapped_column(String(16), default="web", server_default="web", index=True)
     created_at: Mapped[dt.datetime] = _now_col()
     updated_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

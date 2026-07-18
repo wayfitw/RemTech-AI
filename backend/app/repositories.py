@@ -79,18 +79,21 @@ async def revoke_tokens(s, user_id: int) -> None:
 
 # ── Conversations ────────────────────────────────────────────────────────────
 
-async def create_conversation(s, user_id: int, title: str = "Новый чат") -> Conversation:
-    conv = Conversation(user_id=user_id, title=title)
+async def create_conversation(s, user_id: int, title: str = "Новый чат",
+                               channel: str = "web") -> Conversation:
+    conv = Conversation(user_id=user_id, title=title, channel=channel)
     s.add(conv)
     await s.flush()
     return conv
 
 
-async def list_conversations(s, user_id: int, limit: int = 50) -> list[Conversation]:
-    res = await s.scalars(
-        select(Conversation).where(Conversation.user_id == user_id)
-        .order_by(Conversation.updated_at.desc()).limit(limit)
-    )
+async def list_conversations(s, user_id: int, limit: int = 50,
+                             channel: str | None = None) -> list[Conversation]:
+    """Диалоги пользователя. channel — фильтр канала (web/telegram); None — все."""
+    q = select(Conversation).where(Conversation.user_id == user_id)
+    if channel is not None:
+        q = q.where(Conversation.channel == channel)
+    res = await s.scalars(q.order_by(Conversation.updated_at.desc()).limit(limit))
     return list(res)
 
 
