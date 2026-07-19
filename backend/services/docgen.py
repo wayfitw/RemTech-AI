@@ -3,6 +3,7 @@
 - create_pdf:  markdown-подобный текст → .pdf (reportlab, кириллица через TTF из конфига)
 """
 import datetime as dt
+import html
 import io
 import os
 import re
@@ -221,6 +222,9 @@ def create_docx(content: str, filename: str = "document", letterhead: bool = Tru
     if letterhead and "[HEADER" not in content.upper():
         _letterhead()
 
+    # Декодируем HTML-сущности (&nbsp;, &amp;, …), которые модель иногда вставляет,
+    # иначе они выводятся буквально; неразрывный пробел → обычный.
+    content = html.unescape(content).replace("\xa0", " ")
     lines = content.split("\n")
     i = 0
     while i < len(lines):
