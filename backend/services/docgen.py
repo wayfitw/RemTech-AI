@@ -19,10 +19,13 @@ PDF_FONT_PATH = get_settings().pdf_font_path or (
 
 def create_docx(content: str, filename: str = "document") -> bytes:
     from docx import Document
+    from docx.enum.table import WD_ALIGN_VERTICAL
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
     from docx.shared import Cm, Pt, RGBColor
+
+    from services.docx_style import COMPANY
 
     GRAPHITE = RGBColor(0x26, 0x28, 0x2F)
 
@@ -178,6 +181,43 @@ def create_docx(content: str, filename: str = "document") -> bytes:
             row.cells[0].width = Cm(total_cm * widths[0] / 100)
             row.cells[1].width = Cm(total_cm * widths[1] / 100)
         return tbl
+
+    def _letterhead():
+        """Фирменный бланк вверху: жёлтый бокс «RT» + ООО «Ремтехника» + ИНН/КПП/ОГРН.
+        Логотип рисуется ячейкой (файл не нужен). На первой странице документа."""
+        tbl = doc.add_table(rows=1, cols=2)
+        tbl.autofit = False
+        lc, rc = tbl.rows[0].cells
+        lc.width, rc.width = Cm(1.7), Cm(15.3)
+        tbl.rows[0].height = Cm(1.3)
+        for cell in (lc, rc):
+            _set_cell_no_border(cell)
+            cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+        # левая ячейка — жёлтый бокс с «RT»
+        _set_cell_shading(lc, "FFCB05")
+        lp = lc.paragraphs[0]
+        lp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        lp.paragraph_format.space_after = Pt(0)
+        _set_font(lp.add_run("RT"), bold=True, size_pt=22, color=RGBColor(0x1A, 0x1A, 0x1A))
+        # правая ячейка — название + реквизиты
+        grey = RGBColor(0x7F, 0x7F, 0x7F)
+        rows_txt = [
+            (COMPANY["name"], True, GRAPHITE, 13),
+            (f"ИНН {COMPANY['inn']}   КПП {COMPANY['kpp']}", False, grey, 10),
+            (f"ОГРН {COMPANY['ogrn']}", False, grey, 10),
+        ]
+        for idx, (t, bold, color, sz) in enumerate(rows_txt):
+            rp = rc.paragraphs[0] if idx == 0 else rc.add_paragraph()
+            rp.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            rp.paragraph_format.space_after = Pt(0)
+            rp.paragraph_format.line_spacing = 1.0
+            _set_font(rp.add_run(t), bold=bold, size_pt=sz, color=color)
+        # небольшой отступ под бланком (пустой абзац — редактор доков его пропускает)
+        doc.add_paragraph().paragraph_format.space_after = Pt(6)
+
+    # Фирменный бланк по умолчанию — если пользователь не задал свой [HEADER].
+    if "[HEADER" not in content.upper():
+        _letterhead()
 
     lines = content.split("\n")
     i = 0

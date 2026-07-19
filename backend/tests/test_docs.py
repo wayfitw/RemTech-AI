@@ -30,7 +30,9 @@ def test_doc_editor_read_and_edit_roundtrip():
     dx = docgen.create_docx("Первый абзац.\n\nВторой абзац.", "d")
     listing = read_doc(dx)
     assert "P1#" in listing or "параграф" in listing.lower()
-    ref = re.search(r"P\d+#\w+", listing).group(0)
+    # ref именно абзаца с текстом (вверху теперь фирменный бланк — берём по содержимому)
+    ref = next(re.search(r"P\d+#\w+", ln).group(0)
+               for ln in listing.splitlines() if "Первый абзац." in ln)
     out, diff = apply_doc_edits(dx, [{"op": "rewrite", "ref": ref, "new_text": "Изменённый абзац."}])
     assert len(out) > 1000
     from docx import Document
