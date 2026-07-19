@@ -281,14 +281,17 @@ def create_docx(content: str, filename: str = "document") -> bytes:
             _add_run(p, line[2:], bold=True, size_pt=14, color=GRAPHITE)
             _yellow_rule(p); continue
         if line.startswith("## "):
-            p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            p.paragraph_format.space_before = Pt(10)
             _add_run(p, line[3:], bold=True, size_pt=13, color=GRAPHITE); continue
         if line.startswith("### "):
-            p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            p.paragraph_format.space_before = Pt(8)
             _add_run(p, line[4:], bold=True, size_pt=12, color=GRAPHITE); continue
 
         if RE_SECTION.match(line) and not RE_SUBSECTION.match(line):
-            p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            p.paragraph_format.space_before = Pt(10)
             _add_run(p, line, bold=True, size_pt=12, color=GRAPHITE); continue
 
         if RE_TITLE_CAPS.match(line) and 2 <= len(line) <= 80 and len(line.split()) <= 12:
