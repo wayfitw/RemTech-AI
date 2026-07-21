@@ -821,7 +821,8 @@ class Orchestrator:
         # Убираем дублирующий заголовок из начала текста (он добавляется из title):
         # первую непустую строку сравниваем с title без регистра/пунктуации.
         import re as _re
-        _norm = lambda s: _re.sub(r"[^а-яёa-z0-9]+", "", (s or "").lower())
+        def _norm(s):
+            return _re.sub(r"[^а-яёa-z0-9]+", "", (s or "").lower())
         _lines = content.split("\n")
         _k = next((i for i, ln in enumerate(_lines) if ln.strip()), None)
         if _k is not None and _norm(_lines[_k].lstrip("#").strip()) == _norm(title):
