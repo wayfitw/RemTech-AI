@@ -553,7 +553,7 @@ class Orchestrator:
         if existing:
             nm = existing[1]
             return (f"СТОП. Уже есть активный документ «{nm}». Для правок — read_doc + apply_doc_edits.")
-        letterhead = (params.get("style") or "remtekhnika").lower() != "classic"
+        letterhead = (params.get("style") or "classic").lower() == "remtekhnika"
         data = await asyncio.to_thread(docgen.create_docx, params["content"],
                                        params["filename"], letterhead)
         fname = params["filename"] + ".docx"
@@ -833,7 +833,7 @@ class Orchestrator:
         reqs = "\n\n" + "\n".join(requisites_lines())
         full = f"# {title}\n\n{content}{reqs}{disclaimer}"
         base = params.get("filename") or "Договор"
-        letterhead = (params.get("style") or "remtekhnika").lower() != "classic"
+        letterhead = (params.get("style") or "classic").lower() == "remtekhnika"
         data = await asyncio.to_thread(docgen.create_docx, full, base, letterhead)
         fname = base + ".docx"
         await self._save_file(uid, cid, fname, data, "docx", emit, "document")
