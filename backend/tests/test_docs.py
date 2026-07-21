@@ -284,8 +284,9 @@ def test_presentation_embeds_images_via_bytes():
 
 async def test_create_presentation_hybrid_images(monkeypatch):
     # гибрид: реального фото нет → AI-генерация (FLUX замокана) для обложки и слайда
-    import app.orchestrator as orch
     from pptx import Presentation
+
+    import app.orchestrator as orch
     captured = {}
 
     async def fake_save(self, uid, cid, name, data, kind, emit, etype):
@@ -360,8 +361,9 @@ def test_create_proposal_pptx_empty_blocks_has_price():
 
 async def test_create_proposal_pptx_tool(monkeypatch):
     # проводка инструмента + резолв image_asset из папки-ассетов
-    import app.orchestrator as orch
     from pptx import Presentation
+
+    import app.orchestrator as orch
     captured = {}
 
     async def fake_save(self, uid, cid, name, data, kind, emit, etype):
