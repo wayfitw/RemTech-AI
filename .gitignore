@@ -29,3 +29,6 @@ Thumbs.db
 # coverage
 backend/.coverage
 htmlcov/
+
+# Локальные переопределения docker compose (порты dev-машины)
+docker-compose.override.yml

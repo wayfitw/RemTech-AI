@@ -11,6 +11,7 @@ from app.deps import admin_user, conv_dict
 from app.schemas import (
     AdminCreateUserReq,
     AgentReq,
+    ContentChannelReq,
     ModelConfigReq,
     PasswordReq,
     TenderSubscriptionReq,
@@ -289,3 +290,43 @@ async def api_run_news_digest(admin: dict = Depends(admin_user),
     from services import news_digest
     r = await news_digest.run_once(db, require_enabled=False)
     return {"delivered": r["delivered"], "skipped": r["skipped"], "has_text": bool(r["text"])}
+
+
+# ── TASK-0905 (#47): отслеживаемые ТГ-каналы и контент-дайджест ───────────────
+
+@router.get("/content/channels")
+async def api_content_channels(admin: dict = Depends(admin_user),
+                               db: AsyncSession = Depends(get_db)):
+    """Список отслеживаемых каналов (настраивается без перезапуска — хранится в БД)."""
+    return [{"id": c.id, "ref": c.ref, "title": c.title, "active": c.active}
+            for c in await repo.list_content_channels(db)]
+
+
+@router.post("/content/channels")
+async def api_add_content_channel(req: ContentChannelReq, admin: dict = Depends(admin_user),
+                                  db: AsyncSession = Depends(get_db)):
+    ch = await repo.add_content_channel(db, req.ref, req.title or "")
+    await db.commit()
+    if not ch:
+        return {"ok": True, "added": False, "detail": "Канал уже в списке"}
+    return {"ok": True, "added": True, "id": ch.id, "ref": ch.ref, "title": ch.title}
+
+
+@router.delete("/content/channels/{needle}")
+async def api_delete_content_channel(needle: str, admin: dict = Depends(admin_user),
+                                     db: AsyncSession = Depends(get_db)):
+    title = await repo.delete_content_channel(db, needle)
+    if not title:
+        raise HTTPException(404, "Канал не найден")
+    await db.commit()
+    return {"ok": True, "removed": title}
+
+
+@router.post("/content/digest")
+async def api_run_content_digest(admin: dict = Depends(admin_user),
+                                 db: AsyncSession = Depends(get_db)):
+    """Ручной прогон контент-дайджеста (по образцу /tenders/poll; в проде — Celery beat).
+    Форсирует сборку независимо от флага CONTENT_DIGEST_ENABLED."""
+    from services import content_digest
+    r = await content_digest.run_once(db, require_enabled=False)
+    return {"published": r["published"], "skipped": r["skipped"], "topics": r["topics"]}

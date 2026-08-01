@@ -51,3 +51,9 @@ class TenderSubscriptionReq(BaseModel):
     budget_max: int | None = None
     customer: str | None = None
     recipient_roles: str = "закупки"
+
+
+class ContentChannelReq(BaseModel):
+    """TASK-0905 (#47) — отслеживаемый ТГ-канал для контент-дайджеста."""
+    ref: str                       # @username или id канала
+    title: str | None = None

@@ -701,6 +701,57 @@ TOOLS = [
         },
     },
     {
+        "name": "content_digest",
+        "description": (
+            "TASK-0905 — собирает ТЕМЫ ДЛЯ КОНТЕНТА из отслеживаемых Telegram-каналов: читает "
+            "их публикации за период, выделяет темы/тренды (суть + источник), отсеивает те, "
+            "что уже были в прошлых выпусках, и публикует в веб-ленту. Используй по запросам "
+            "«темы для постов», «что писать», «дайджест каналов», «тренды по каналам». "
+            "Список каналов ведётся инструментами add_content_channel/list_content_channels."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "hours": {"type": "integer",
+                          "description": "Окно сбора публикаций в часах (по умолчанию из конфига, обычно 24)"},
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "add_content_channel",
+        "description": (
+            "Добавляет Telegram-канал в мониторинг тем для контента (по @username или id). "
+            "Используй на «добавь канал X в отслеживаемые / в контент-дайджест»."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "ref": {"type": "string", "description": "@username или id канала"},
+                "title": {"type": "string", "description": "Название для отображения (опционально)"},
+            },
+            "required": ["ref"],
+        },
+    },
+    {
+        "name": "list_content_channels",
+        "description": "Показывает список отслеживаемых каналов контент-дайджеста.",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "remove_content_channel",
+        "description": (
+            "Убирает канал из мониторинга контент-дайджеста (по @username, id или названию)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "needle": {"type": "string", "description": "@username, id или часть названия"},
+            },
+            "required": ["needle"],
+        },
+    },
+    {
         "name": "get_weather",
         "description": (
             "Точная погода в городе: текущая + прогноз на 3 дня, из специализированного "

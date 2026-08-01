@@ -40,5 +40,11 @@ celery_app.conf.update(
             "task": "news.digest",
             "schedule": crontab(minute=0, hour=settings.ai_news_hour),
         },
+        # TASK-0905 (#47) — ежедневный контент-дайджест по отслеживаемым ТГ-каналам
+        # в час из конфига; задача уважает CONTENT_DIGEST_ENABLED (выключено → no-op).
+        "content-digest-daily": {
+            "task": "content.digest",
+            "schedule": crontab(minute=0, hour=settings.content_digest_hour),
+        },
     },
 )

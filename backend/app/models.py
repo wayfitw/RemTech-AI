@@ -10,6 +10,7 @@ import datetime as dt
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     JSON,
+    Boolean,
     DateTime,
     ForeignKey,
     Index,
@@ -17,6 +18,7 @@ from sqlalchemy import (
     String,
     Text,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -239,4 +241,28 @@ class DigestGroup(Base):
         ForeignKey("users.id", ondelete="CASCADE"), index=True)
     ref: Mapped[str] = mapped_column(String(200))
     title: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[dt.datetime] = _now_col()
+
+
+class ContentChannel(Base):
+    """TASK-0905 (#47) — отслеживаемый Telegram-канал для контент-дайджеста (маркетинг).
+    Общий список компании (не личный, в отличие от digest_groups): настраивается через
+    админку/инструмент без перезапуска. ref — @username или id канала."""
+    __tablename__ = "content_channels"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ref: Mapped[str] = mapped_column(String(200), unique=True)
+    title: Mapped[str] = mapped_column(Text, default="")
+    active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"))
+    created_at: Mapped[dt.datetime] = _now_col()
+
+
+class ContentTopicSeen(Base):
+    """TASK-0905 (#47) — отправленные темы контент-дайджеста: дедуп МЕЖДУ выпусками
+    по хэшу нормализованной темы (иначе одна и та же тема повторяется каждый день)."""
+    __tablename__ = "content_topics_seen"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    topic_hash: Mapped[str] = mapped_column(String(64), unique=True)   # unique уже даёт индекс
+    topic: Mapped[str] = mapped_column(Text)
     created_at: Mapped[dt.datetime] = _now_col()

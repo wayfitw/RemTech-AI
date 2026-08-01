@@ -67,6 +67,23 @@ def news_digest_task() -> int:
     return 1 if r.get("text") else 0
 
 
+@celery_app.task(name="content.digest")
+def content_digest_task() -> int:
+    """TASK-0905 (#47) — периодический контент-дайджест по отслеживаемым ТГ-каналам:
+    сбор публикаций → LLM-выжимка тем → дедуп между выпусками → веб-лента + Telegram.
+    Уважает CONTENT_DIGEST_ENABLED; недоступность канала/модели не роняет задачу."""
+    from app.database import SessionLocal
+    from services import content_digest
+
+    async def _run() -> dict:
+        async with SessionLocal() as s:
+            return await content_digest.run_once(s, require_enabled=True)
+
+    r = asyncio.run(_run())
+    log.info("content digest: %s", r.get("skipped") or f"опубликовано тем: {r.get('published')}")
+    return int(r.get("published") or 0)
+
+
 @celery_app.task(name="activity.purge")
 def purge_activity_log_task() -> int:
     """Issue #13 — периодическая очистка журнала по сроку хранения (retention)."""

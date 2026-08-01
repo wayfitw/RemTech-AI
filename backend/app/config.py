@@ -154,6 +154,17 @@ class Settings(BaseSettings):
     def ai_news_topic_list(self) -> list[str]:
         return [t.strip() for t in self.ai_news_topics.split(",") if t.strip()]
 
+    # ── Контент-дайджест ТГ-каналов (EPIC-09, #47) ──────────────────────────────
+    # Список каналов ведётся в БД (content_channels) — настраивается без перезапуска.
+    content_digest_enabled: bool = False       # периодический выпуск (Celery beat)
+    content_digest_hour: int = 10              # час доставки (местный)
+    content_digest_hours: int = 24             # окно сбора публикаций, часов
+    content_digest_roles: str = "маркетинг,руководство"   # получатели веб-ленты
+
+    @property
+    def content_digest_role_list(self) -> list[str]:
+        return [r.strip() for r in self.content_digest_roles.split(",") if r.strip()]
+
     # ── файлы / документы ──────────────────────────────────────────────────────
     files_dir: str = "data/files"
     pdf_font_path: str = ""

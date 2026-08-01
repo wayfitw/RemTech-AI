@@ -393,3 +393,31 @@ async def test_conversation_channel_isolation(session):
     everything = await repo.list_conversations(session, u.id)
     assert [c.title for c in web] == ["веб-чат"]        # веб видит только свой канал
     assert len(everything) == 2                          # без фильтра — оба
+
+
+async def test_admin_content_channels_and_digest(client, monkeypatch):
+    # TASK-0905 (#47) — каналы настраиваются без перезапуска + ручной прогон дайджеста
+    admin = await _register_admin(client)
+    add = await client.post("/api/admin/content/channels",
+                            json={"ref": "@spectehnika", "title": "Спецтехника"},
+                            headers=_auth(admin))
+    assert add.status_code == 200 and add.json()["added"] is True
+    lst = await client.get("/api/admin/content/channels", headers=_auth(admin))
+    assert [c["ref"] for c in lst.json()] == ["@spectehnika"]
+
+    async def fake_run_once(s, **kw):
+        assert kw.get("require_enabled") is False          # админ форсирует
+        return {"published": 2, "skipped": None, "topics": [{"topic": "t"}], "text": "t"}
+
+    import services.content_digest as cd
+    monkeypatch.setattr(cd, "run_once", fake_run_once)
+    run = await client.post("/api/admin/content/digest", headers=_auth(admin))
+    assert run.status_code == 200 and run.json()["published"] == 2
+
+    rm = await client.delete("/api/admin/content/channels/@spectehnika", headers=_auth(admin))
+    assert rm.status_code == 200 and rm.json()["removed"] == "Спецтехника"
+
+
+async def test_admin_content_digest_requires_admin(client):
+    client.cookies.clear()
+    assert (await client.post("/api/admin/content/digest")).status_code == 401

@@ -12,6 +12,8 @@ from app.models import (
     ActivityLog,
     Agent,
     ChatHistory,
+    ContentChannel,
+    ContentTopicSeen,
     Conversation,
     DigestGroup,
     KBChunk,
@@ -513,3 +515,53 @@ async def delete_digest_group(s, user_id: int, needle: str) -> str | None:
     title = match.title
     await s.delete(match)
     return title
+
+
+# ── TASK-0905 (#47): отслеживаемые каналы контент-дайджеста + дедуп тем ────────
+
+async def add_content_channel(s, ref: str, title: str = "") -> ContentChannel | None:
+    """Добавляет канал в мониторинг (идемпотентно по ref). None — уже есть."""
+    ref = (ref or "").strip()
+    exists = await s.scalar(select(ContentChannel).where(ContentChannel.ref == ref))
+    if exists:
+        return None
+    ch = ContentChannel(ref=ref, title=(title or ref).strip())
+    s.add(ch)
+    await s.flush()
+    return ch
+
+
+async def list_content_channels(s, only_active: bool = False) -> list[ContentChannel]:
+    q = select(ContentChannel)
+    if only_active:
+        q = q.where(ContentChannel.active.is_(True))
+    return list(await s.scalars(q.order_by(ContentChannel.id)))
+
+
+async def delete_content_channel(s, needle: str) -> str | None:
+    """Удаляет канал по ref, id или подстроке названия. Возвращает title удалённого."""
+    rows = await list_content_channels(s)
+    n = str(needle).strip().lower()
+    match = next((c for c in rows if c.ref.lower() == n or str(c.id) == n
+                  or (c.title and n in c.title.lower())), None)
+    if not match:
+        return None
+    title = match.title or match.ref
+    await s.delete(match)
+    return title
+
+
+async def mark_topic_seen(s, topic: str) -> bool:
+    """Помечает тему отправленной. True — новая (можно публиковать), False — уже была
+    в предыдущих выпусках (дедуп между выпусками)."""
+    import hashlib
+    import re as _re
+    norm = _re.sub(r"[^0-9a-zA-Zа-яёА-ЯЁ]+", " ", (topic or "")).strip().lower()
+    if not norm:
+        return False
+    h = hashlib.sha256(norm.encode("utf-8")).hexdigest()[:64]
+    if await s.scalar(select(ContentTopicSeen).where(ContentTopicSeen.topic_hash == h)):
+        return False
+    s.add(ContentTopicSeen(topic_hash=h, topic=(topic or "")[:500]))
+    await s.flush()
+    return True

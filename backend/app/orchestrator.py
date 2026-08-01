@@ -370,6 +370,10 @@ class Orchestrator:
             "create_contract": self._t_create_contract,
             "analyze_conversation": self._t_analyze_conversation,
             "ai_news_digest": self._t_ai_news_digest,
+            "content_digest": self._t_content_digest,
+            "add_content_channel": self._t_add_content_channel,
+            "list_content_channels": self._t_list_content_channels,
+            "remove_content_channel": self._t_remove_content_channel,
         }
 
     async def _execute_tool(self, name, params, emit, uid, cid, roles=None, sources=None):
@@ -869,6 +873,54 @@ class Orchestrator:
             await repo.add_notification(s, "руководство", title, body)
             await s.commit()
         return f"📰 {title}\n\n{body}"
+
+    # ── TASK-0905 (#47): контент-дайджест по отслеживаемым ТГ-каналам ─────────
+
+    async def _t_content_digest(self, params, emit, uid, cid, roles, sources):
+        from services import content_digest
+        async with SessionLocal() as s:
+            r = await content_digest.run_once(s, hours=params.get("hours"),
+                                              require_enabled=False, deliver_tg=False)
+        skipped = r.get("skipped")
+        if skipped == "no_channels":
+            return ("Список отслеживаемых каналов пуст. Добавь каналы через "
+                    "add_content_channel (@username или id).")
+        if skipped == "collect_failed":
+            return "Не удалось прочитать каналы (Telegram недоступен или сессия не настроена)."
+        if skipped == "llm_failed":
+            return "Не удалось выделить темы — модель не ответила. Попробуй ещё раз."
+        if skipped in ("no_topics", "all_duplicates"):
+            return ("Новых тем не набралось — всё, что нашлось, уже было в прошлых выпусках."
+                    if skipped == "all_duplicates" else
+                    "Значимых тем в публикациях каналов не нашлось.")
+        return f"📣 Темы для контента ({r['published']}):\n\n{r['text']}"
+
+    async def _t_add_content_channel(self, params, emit, uid, cid, roles, sources):
+        ref = (params.get("ref") or "").strip()
+        if not ref:
+            return "Укажи канал: @username или id."
+        async with SessionLocal() as s:
+            ch = await repo.add_content_channel(s, ref, params.get("title") or "")
+            await s.commit()
+        return (f"Канал «{ch.title}» добавлен в мониторинг тем для контента."
+                if ch else f"Канал «{ref}» уже в списке отслеживаемых.")
+
+    async def _t_list_content_channels(self, params, emit, uid, cid, roles, sources):
+        async with SessionLocal() as s:
+            rows = await repo.list_content_channels(s)
+        if not rows:
+            return "Список отслеживаемых каналов пуст."
+        lines = [f"• {c.title or c.ref} ({c.ref})" + ("" if c.active else " — выключен")
+                 for c in rows]
+        return "Отслеживаемые каналы:\n" + "\n".join(lines)
+
+    async def _t_remove_content_channel(self, params, emit, uid, cid, roles, sources):
+        needle = (params.get("needle") or "").strip()
+        async with SessionLocal() as s:
+            title = await repo.delete_content_channel(s, needle)
+            await s.commit()
+        return (f"Канал «{title}» убран из мониторинга." if title
+                else f"Канал «{needle}» не найден в списке.")
 
     async def _t_read_doc(self, params, emit, uid, cid, roles, sources):
         cur = await self.state.get_docx(cid)
