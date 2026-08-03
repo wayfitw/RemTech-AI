@@ -701,6 +701,45 @@ TOOLS = [
         },
     },
     {
+        "name": "add_part_query",
+        "description": (
+            "TASK-0606 — добавляет запрос (ключевые слова или артикул) в мониторинг объявлений "
+            "о запчастях на Авито/Дром. Используй на «следи за ценами на …», «добавь в мониторинг "
+            "запчастей …». Доступ: закупки/руководство."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Ключевые слова или артикул, напр. «гидронасос XCMG XE215»"},
+                "source": {"type": "string", "enum": ["avito", "drom", "all"],
+                           "description": "Площадка (по умолчанию all — обе)"},
+                "region": {"type": "string", "description": "Регион (опционально), напр. «krasnoyarskiy_kray»"},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "list_part_queries",
+        "description": (
+            "TASK-0606 — показывает запросы, стоящие на мониторинге объявлений о запчастях, "
+            "и сводку собранного (сколько активных объявлений, сколько снято). "
+            "Доступ: закупки/руководство."
+        ),
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "remove_part_query",
+        "description": (
+            "TASK-0606 — убирает запрос из мониторинга объявлений о запчастях (по тексту или id). "
+            "Доступ: закупки/руководство."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"needle": {"type": "string", "description": "Текст запроса или его id"}},
+            "required": ["needle"],
+        },
+    },
+    {
         "name": "create_content_plan",
         "description": (
             "TASK-0901 — формирует КОНТЕНТ-ПЛАН публикаций (Word и/или Excel в фирменном стиле): "

@@ -13,6 +13,7 @@ from app.schemas import (
     AgentReq,
     ContentChannelReq,
     ModelConfigReq,
+    PartQueryReq,
     PasswordReq,
     TenderSubscriptionReq,
 )
@@ -330,3 +331,45 @@ async def api_run_content_digest(admin: dict = Depends(admin_user),
     from services import content_digest
     r = await content_digest.run_once(db, require_enabled=False)
     return {"published": r["published"], "skipped": r["skipped"], "topics": r["topics"]}
+
+
+# ── Мониторинг объявлений о запчастях (TASK-0606, #46) ────────────────────────
+
+@router.get("/parts/queries")
+async def api_part_queries(admin: dict = Depends(admin_user),
+                           db: AsyncSession = Depends(get_db)):
+    """Запросы мониторинга (ключевые слова/артикулы) — настраиваются без перезапуска."""
+    return [{"id": q.id, "query": q.query, "source": q.source, "region": q.region,
+             "active": q.active} for q in await repo.list_part_queries(db)]
+
+
+@router.post("/parts/queries")
+async def api_add_part_query(req: PartQueryReq, admin: dict = Depends(admin_user),
+                             db: AsyncSession = Depends(get_db)):
+    row = await repo.add_part_query(db, req.query, req.source or "all", req.region or "")
+    await db.commit()
+    if not row:
+        return {"ok": True, "added": False, "detail": "Такой запрос уже в мониторинге"}
+    return {"ok": True, "added": True, "id": row.id, "query": row.query,
+            "source": row.source, "region": row.region}
+
+
+@router.delete("/parts/queries/{needle}")
+async def api_delete_part_query(needle: str, admin: dict = Depends(admin_user),
+                                db: AsyncSession = Depends(get_db)):
+    text_ = await repo.delete_part_query(db, needle)
+    if not text_:
+        raise HTTPException(404, "Запрос не найден")
+    await db.commit()
+    return {"ok": True, "removed": text_}
+
+
+@router.post("/parts/poll")
+async def api_run_parts_poll(admin: dict = Depends(admin_user),
+                             db: AsyncSession = Depends(get_db)):
+    """Ручной прогон сбора объявлений (по образцу /tenders/poll; в проде — Celery beat).
+    Форсирует сбор независимо от PARTS_PARSE_ENABLED; robots.txt всё равно уважается."""
+    from services import parts_market
+    r = await parts_market.poll_once(db, require_enabled=False)
+    return {"new": r["new"], "updated": r["updated"], "closed": r["closed"],
+            "errors": r["errors"], "skipped": r["skipped"]}

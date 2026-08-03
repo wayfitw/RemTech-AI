@@ -17,6 +17,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
     text,
 )
@@ -266,3 +267,43 @@ class ContentTopicSeen(Base):
     topic_hash: Mapped[str] = mapped_column(String(64), unique=True)   # unique уже даёт индекс
     topic: Mapped[str] = mapped_column(Text)
     created_at: Mapped[dt.datetime] = _now_col()
+
+
+class PartQuery(Base):
+    """TASK-0606 (#46) — что мониторим на площадках объявлений: ключевые слова или
+    артикул запчасти. Настраивается без перезапуска (админка/инструмент)."""
+    __tablename__ = "part_queries"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    query: Mapped[str] = mapped_column(String(200))
+    source: Mapped[str] = mapped_column(String(16), default="all")   # avito | drom | all
+    region: Mapped[str] = mapped_column(String(100), default="")
+    active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"))
+    created_at: Mapped[dt.datetime] = _now_col()
+
+    __table_args__ = (UniqueConstraint("query", "source", "region", name="uq_part_query"),)
+
+
+class PartListing(Base):
+    """TASK-0606 (#46) — объявление о запчасти с внешней площадки и его история:
+    цена (первая и текущая), дата публикации, даты первого/последнего показа и
+    дата снятия — по ней оценивается скорость реализации позиции."""
+    __tablename__ = "part_listings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source: Mapped[str] = mapped_column(String(16), index=True)       # avito | drom
+    external_id: Mapped[str] = mapped_column(String(64))              # id объявления на площадке
+    query_id: Mapped[int | None] = mapped_column(
+        ForeignKey("part_queries.id", ondelete="SET NULL"), nullable=True, index=True)
+    title: Mapped[str] = mapped_column(Text, default="")
+    url: Mapped[str] = mapped_column(Text, default="")
+    region: Mapped[str] = mapped_column(String(100), default="")
+    price: Mapped[int | None] = mapped_column(Integer, nullable=True)          # текущая цена, ₽
+    price_initial: Mapped[int | None] = mapped_column(Integer, nullable=True)  # цена при первом показе
+    published_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    first_seen_at: Mapped[dt.datetime] = _now_col()
+    last_seen_at: Mapped[dt.datetime] = _now_col()
+    closed_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)   # объявление пропало из выдачи → снято
+
+    __table_args__ = (UniqueConstraint("source", "external_id", name="uq_part_listing"),)

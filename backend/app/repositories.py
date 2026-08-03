@@ -20,6 +20,8 @@ from app.models import (
     KBDocument,
     ModelConfig,
     Notification,
+    PartListing,
+    PartQuery,
     Reminder,
     TenderSeen,
     TenderSubscription,
@@ -565,3 +567,90 @@ async def mark_topic_seen(s, topic: str) -> bool:
     s.add(ContentTopicSeen(topic_hash=h, topic=(topic or "")[:500]))
     await s.flush()
     return True
+
+
+# ── Объявления о запчастях (TASK-0606, #46) ────────────────────────────────────
+
+async def add_part_query(s, query: str, source: str = "all", region: str = "") -> PartQuery | None:
+    """Добавляет запрос в мониторинг (идемпотентно по query+source+region)."""
+    query = (query or "").strip()
+    source = (source or "all").strip().lower()
+    region = (region or "").strip()
+    exists = await s.scalar(select(PartQuery).where(
+        PartQuery.query == query, PartQuery.source == source, PartQuery.region == region))
+    if exists:
+        return None
+    row = PartQuery(query=query, source=source, region=region)
+    s.add(row)
+    await s.flush()
+    return row
+
+
+async def list_part_queries(s, only_active: bool = False) -> list[PartQuery]:
+    q = select(PartQuery)
+    if only_active:
+        q = q.where(PartQuery.active.is_(True))
+    return list(await s.scalars(q.order_by(PartQuery.id)))
+
+
+async def delete_part_query(s, needle: str) -> str | None:
+    """Удаляет запрос по id или тексту (подстроке). Возвращает текст удалённого."""
+    rows = await list_part_queries(s)
+    n = str(needle).strip().lower()
+    match = next((r for r in rows if str(r.id) == n or r.query.lower() == n
+                  or n in r.query.lower()), None)
+    if not match:
+        return None
+    text_ = match.query
+    await s.delete(match)
+    return text_
+
+
+async def upsert_part_listing(s, *, source: str, external_id: str, query_id: int | None,
+                              title: str, url: str, region: str, price, published_at,
+                              now) -> bool:
+    """Создаёт объявление или обновляет известное (цена/последний показ, снятие снимается).
+    Возвращает True, если запись создана впервые (для счётчика новых)."""
+    row = await s.scalar(select(PartListing).where(
+        PartListing.source == source, PartListing.external_id == str(external_id)))
+    if row is None:
+        s.add(PartListing(
+            source=source, external_id=str(external_id), query_id=query_id,
+            title=title or "", url=url or "", region=region or "",
+            price=price, price_initial=price, published_at=published_at,
+            first_seen_at=now, last_seen_at=now))
+        await s.flush()
+        return True
+    row.last_seen_at = now
+    row.closed_at = None                     # снова в выдаче — значит не снято
+    if price is not None:
+        row.price = price
+        if row.price_initial is None:
+            row.price_initial = price
+    if title:
+        row.title = title
+    if url:
+        row.url = url
+    if published_at and not row.published_at:
+        row.published_at = published_at
+    await s.flush()
+    return False
+
+
+async def close_missing_part_listings(s, *, source: str, query_id: int | None,
+                                      seen_ids: list[str], now) -> int:
+    """Помечает снятыми объявления запроса, которых не было в этом проходе выдачи.
+    Пустой seen_ids (источник не ответил) ничего не закрывает — иначе ложные снятия."""
+    if not seen_ids:
+        return 0
+    q = select(PartListing).where(
+        PartListing.source == source,
+        PartListing.query_id == query_id,
+        PartListing.closed_at.is_(None),
+        PartListing.external_id.not_in([str(x) for x in seen_ids]),
+    )
+    rows = list(await s.scalars(q))
+    for row in rows:
+        row.closed_at = now
+    await s.flush()
+    return len(rows)

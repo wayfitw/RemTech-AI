@@ -165,6 +165,15 @@ class Settings(BaseSettings):
     def content_digest_role_list(self) -> list[str]:
         return [r.strip() for r in self.content_digest_roles.split(",") if r.strip()]
 
+    # ── Мониторинг объявлений о запчастях, Авито/Дром (EPIC-06, #46) ────────────
+    # Запросы (ключевые слова/артикулы) ведутся в БД (part_queries) — без перезапуска.
+    # ВЫКЛЮЧЕНО по умолчанию: допустимость и частоту сбора нужно согласовать с
+    # площадками (оговорка TASK-0606). robots.txt уважается всегда.
+    parts_parse_enabled: bool = False
+    parts_poll_interval_seconds: int = 6 * 60 * 60    # период прогона (Celery beat)
+    parts_request_delay_seconds: float = 2.0          # пауза между запросами к площадке
+    parts_user_agent: str = "RemTechAI-PartsMonitor"  # честный User-Agent для robots.txt
+
     # ── файлы / документы ──────────────────────────────────────────────────────
     files_dir: str = "data/files"
     pdf_font_path: str = ""

@@ -421,3 +421,34 @@ async def test_admin_content_channels_and_digest(client, monkeypatch):
 async def test_admin_content_digest_requires_admin(client):
     client.cookies.clear()
     assert (await client.post("/api/admin/content/digest")).status_code == 401
+
+
+async def test_admin_parts_queries_and_poll(client, monkeypatch):
+    """TASK-0606 (#46) — CRUD запросов мониторинга + ручной прогон сбора (admin)."""
+    admin = await _register_admin(client)
+
+    add = await client.post("/api/admin/parts/queries",
+                            json={"query": "гидронасос XCMG", "source": "avito"},
+                            headers=_auth(admin))
+    assert add.status_code == 200 and add.json()["added"] is True
+
+    lst = await client.get("/api/admin/parts/queries", headers=_auth(admin))
+    assert lst.status_code == 200
+    assert [q["query"] for q in lst.json()] == ["гидронасос XCMG"]
+
+    # ручной прогон: площадка «недоступна» — эндпоинт отвечает, ошибка в errors
+    async def fake_poll(db, **kw):
+        assert kw.get("require_enabled") is False        # админ форсирует сбор
+        return {"new": 0, "updated": 0, "closed": 0,
+                "errors": ["avito «гидронасос XCMG»: площадка не отвечает"], "skipped": None}
+
+    import services.parts_market as pm_mod
+    monkeypatch.setattr(pm_mod, "poll_once", fake_poll)
+    run = await client.post("/api/admin/parts/poll", headers=_auth(admin))
+    assert run.status_code == 200 and run.json()["errors"]
+
+    rm = await client.delete("/api/admin/parts/queries/гидронасос", headers=_auth(admin))
+    assert rm.status_code == 200 and "гидронасос" in rm.json()["removed"]
+
+    client.cookies.clear()
+    assert (await client.post("/api/admin/parts/poll")).status_code == 401

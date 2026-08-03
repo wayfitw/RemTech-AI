@@ -46,5 +46,11 @@ celery_app.conf.update(
             "task": "content.digest",
             "schedule": crontab(minute=0, hour=settings.content_digest_hour),
         },
+        # TASK-0606 (#46) — сбор объявлений о запчастях (Авито/Дром) с интервалом из
+        # конфига; задача уважает PARTS_PARSE_ENABLED (выключено → no-op).
+        "poll-parts": {
+            "task": "parts.poll",
+            "schedule": settings.parts_poll_interval_seconds,
+        },
     },
 )

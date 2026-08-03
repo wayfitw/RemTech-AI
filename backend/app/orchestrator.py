@@ -373,6 +373,9 @@ class Orchestrator:
             "content_digest": self._t_content_digest,
             "analyze_market": self._t_analyze_market,
             "create_content_plan": self._t_create_content_plan,
+            "add_part_query": self._t_add_part_query,
+            "list_part_queries": self._t_list_part_queries,
+            "remove_part_query": self._t_remove_part_query,
             "add_content_channel": self._t_add_content_channel,
             "list_content_channels": self._t_list_content_channels,
             "remove_content_channel": self._t_remove_content_channel,
@@ -878,6 +881,54 @@ class Orchestrator:
         return f"📰 {title}\n\n{body}"
 
     # ── TASK-0905 (#47): контент-дайджест по отслеживаемым ТГ-каналам ─────────
+
+    # ── мониторинг объявлений о запчастях (TASK-0606, #46) ────────────────────
+
+    async def _t_add_part_query(self, params, emit, uid, cid, roles, sources):
+        query = (params.get("query") or "").strip()
+        if not query:
+            return "Нужны ключевые слова или артикул для мониторинга."
+        source = (params.get("source") or "all").lower()
+        region = (params.get("region") or "").strip()
+        async with SessionLocal() as s:
+            row = await repo.add_part_query(s, query, source, region)
+            await s.commit()
+        if not row:
+            return f"Запрос «{query}» уже в мониторинге."
+        where = "Авито и Дром" if source == "all" else source
+        return (f"Запрос «{query}» добавлен в мониторинг объявлений ({where}). "
+                "Сбор идёт по расписанию; данные копятся для аналитики спроса.")
+
+    async def _t_list_part_queries(self, params, emit, uid, cid, roles, sources):
+        from sqlalchemy import func as sa_func
+        from sqlalchemy import select as sa_select
+
+        from app.models import PartListing
+        async with SessionLocal() as s:
+            rows = await repo.list_part_queries(s)
+            if not rows:
+                return ("Мониторинг объявлений о запчастях пуст. Добавь запрос через "
+                        "add_part_query (ключевые слова или артикул).")
+            lines = []
+            for q in rows:
+                active = await s.scalar(sa_select(sa_func.count()).select_from(PartListing).where(
+                    PartListing.query_id == q.id, PartListing.closed_at.is_(None)))
+                closed = await s.scalar(sa_select(sa_func.count()).select_from(PartListing).where(
+                    PartListing.query_id == q.id, PartListing.closed_at.is_not(None)))
+                where = "Авито+Дром" if q.source == "all" else q.source
+                lines.append(f"• #{q.id} «{q.query}» ({where}"
+                             + (f", {q.region}" if q.region else "")
+                             + f") — в продаже: {active}, снято: {closed}")
+        return "Мониторинг объявлений о запчастях:\n" + "\n".join(lines)
+
+    async def _t_remove_part_query(self, params, emit, uid, cid, roles, sources):
+        needle = (params.get("needle") or "").strip()
+        async with SessionLocal() as s:
+            removed = await repo.delete_part_query(s, needle)
+            await s.commit()
+        if not removed:
+            return f"Запрос «{needle}» в мониторинге не найден."
+        return f"Запрос «{removed}» убран из мониторинга объявлений."
 
     async def _t_create_content_plan(self, params, emit, uid, cid, roles, sources):
         # TASK-0901 (#49): темы и сроки придумывает модель по БЗ — здесь оформление

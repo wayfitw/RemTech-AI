@@ -84,6 +84,25 @@ def content_digest_task() -> int:
     return int(r.get("published") or 0)
 
 
+@celery_app.task(name="parts.poll")
+def parts_poll_task() -> int:
+    """TASK-0606 (#46) — периодический сбор объявлений о запчастях (Авито/Дром):
+    новые добавляются, известные обновляются, пропавшие помечаются снятыми.
+    Уважает PARTS_PARSE_ENABLED и robots.txt; недоступность площадки не роняет задачу."""
+    from app.database import SessionLocal
+    from services import parts_market
+
+    async def _run() -> dict:
+        async with SessionLocal() as s:
+            return await parts_market.poll_once(s, require_enabled=True)
+
+    r = asyncio.run(_run())
+    log.info("parts poll: %s", r.get("skipped") or
+             f"новых {r.get('new')}, обновлено {r.get('updated')}, снято {r.get('closed')}"
+             + (f", ошибок источников: {len(r.get('errors') or [])}" if r.get("errors") else ""))
+    return int(r.get("new") or 0)
+
+
 @celery_app.task(name="activity.purge")
 def purge_activity_log_task() -> int:
     """Issue #13 — периодическая очистка журнала по сроку хранения (retention)."""

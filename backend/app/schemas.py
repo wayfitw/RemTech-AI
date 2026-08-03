@@ -57,3 +57,10 @@ class ContentChannelReq(BaseModel):
     """TASK-0905 (#47) — отслеживаемый ТГ-канал для контент-дайджеста."""
     ref: str                       # @username или id канала
     title: str | None = None
+
+
+class PartQueryReq(BaseModel):
+    """TASK-0606 (#46) — запрос мониторинга объявлений о запчастях."""
+    query: str                     # ключевые слова или артикул
+    source: str | None = None      # avito | drom | all (по умолчанию all)
+    region: str | None = None
