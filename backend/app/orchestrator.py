@@ -372,6 +372,7 @@ class Orchestrator:
             "ai_news_digest": self._t_ai_news_digest,
             "content_digest": self._t_content_digest,
             "analyze_market": self._t_analyze_market,
+            "create_content_plan": self._t_create_content_plan,
             "add_content_channel": self._t_add_content_channel,
             "list_content_channels": self._t_list_content_channels,
             "remove_content_channel": self._t_remove_content_channel,
@@ -877,6 +878,28 @@ class Orchestrator:
         return f"📰 {title}\n\n{body}"
 
     # ── TASK-0905 (#47): контент-дайджест по отслеживаемым ТГ-каналам ─────────
+
+    async def _t_create_content_plan(self, params, emit, uid, cid, roles, sources):
+        # TASK-0901 (#49): темы и сроки придумывает модель по БЗ — здесь оформление
+        # в фирменные .docx/.xlsx. Недостающие факты о продуктах идут в «Требует уточнения».
+        base = params.get("filename") or params.get("title") or "Контент-план"
+        fmt = (params.get("format") or "docx").lower()
+        made = []
+        if fmt in ("docx", "both"):
+            d = await asyncio.to_thread(docgen.create_content_plan, params)
+            await self._save_file(uid, cid, base + ".docx", d, "docx", emit, "document")
+            made.append("Word")
+        if fmt in ("xlsx", "both"):
+            x = await asyncio.to_thread(docgen.create_content_plan_xlsx, params)
+            await self._save_file(uid, cid, base + ".xlsx", x, "xlsx", emit, "document")
+            made.append("Excel")
+        n_items = len(params.get("items") or [])
+        n_gaps = len(params.get("gaps") or [])
+        msg = (f"Контент-план «{base}» готов в {' и '.join(made) or 'Word'} "
+               f"({n_items} публикаций) и отправлен пользователю.")
+        if n_gaps:
+            msg += f" Требует уточнения пунктов: {n_gaps} — перечисли их пользователю."
+        return msg
 
     async def _t_analyze_market(self, params, emit, uid, cid, roles, sources):
         # TASK-0904 (#48): фактуру собирает модель (веб-поиск/read_url) — здесь только

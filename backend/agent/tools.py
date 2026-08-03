@@ -701,6 +701,51 @@ TOOLS = [
         },
     },
     {
+        "name": "create_content_plan",
+        "description": (
+            "TASK-0901 — формирует КОНТЕНТ-ПЛАН публикаций (Word и/или Excel в фирменном стиле): "
+            "темы, форматы, ориентировочные даты, продукт/линейка, канал. Используй по запросам "
+            "«контент-план», «план публикаций», «что постить в августе», «план на месяц».\n"
+            "ПОРЯДОК: СНАЧАЛА подними факты о продуктовой линейке, акциях и сезонности через "
+            "search_knowledge_base, затем составь план и вызови этот инструмент.\n"
+            "БЕЗ ДОМЫСЛИВАНИЯ: не выдумывай характеристики, цены и акции. Чего нет в базе знаний "
+            "или в запросе — перечисли в gaps («уточнить: …»). В seasonality объясни, почему темы "
+            "и сроки именно такие. Доступ: маркетинг/руководство."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "Заголовок, напр. «Контент-план на август 2026»"},
+                "period": {"type": "string", "description": "Период плана, напр. «01.08.2026 – 31.08.2026»"},
+                "summary": {"type": "string", "description": "Фокус периода 1–2 предложениями"},
+                "items": {
+                    "type": "array",
+                    "description": "Позиции плана по порядку",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "date": {"type": "string", "description": "Дата или неделя публикации"},
+                            "topic": {"type": "string", "description": "Тема публикации"},
+                            "format": {"type": "string", "description": "Формат: пост, видео, кейс, сторис, статья"},
+                            "product": {"type": "string", "description": "Продукт/линейка из базы знаний"},
+                            "channel": {"type": "string", "description": "Канал: Telegram, сайт, VK …"},
+                            "note": {"type": "string", "description": "Примечание/призыв к действию"},
+                        },
+                        "required": ["topic"],
+                    },
+                },
+                "seasonality": {"type": "array", "items": {"type": "string"},
+                                "description": "Сезонные факторы, объясняющие темы и сроки"},
+                "gaps": {"type": "array", "items": {"type": "string"},
+                         "description": "Чего нет в БЗ/запросе — требует уточнения (не выдумывать)"},
+                "format": {"type": "string", "enum": ["docx", "xlsx", "both"],
+                           "description": "Формат выгрузки: docx (по умолчанию), xlsx или both"},
+                "filename": {"type": "string", "description": "Имя файла без расширения"},
+            },
+            "required": ["title", "items"],
+        },
+    },
+    {
         "name": "analyze_market",
         "description": (
             "TASK-0904 — формирует АНАЛИТИЧЕСКИЙ ОТЧЁТ по рынку и конкурентам (Word и/или Excel "

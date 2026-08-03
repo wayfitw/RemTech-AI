@@ -1126,6 +1126,11 @@ def create_presentation(spec: dict) -> bytes:
 # (объёмная раскладка), доступна как docgen.create_proposal_pptx для симметрии с
 # create_proposal / create_proposal_pdf.
 # TASK-0904 (#48) — аналитический отчёт по рынку и конкурентам (Word + Excel).
+# TASK-0901 (#49) — контент-план с сезонностью и линейкой (Word + Excel).
+from services.content_plan import (  # noqa: E402,F401
+    create_content_plan,
+    create_content_plan_xlsx,
+)
 from services.market_report import (  # noqa: E402,F401
     create_market_report,
     create_market_report_xlsx,
