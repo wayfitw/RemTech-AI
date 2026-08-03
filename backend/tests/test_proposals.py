@@ -91,3 +91,128 @@ async def test_proposals_extract(client, monkeypatch):
         headers=_auth(admin))
     assert r.status_code == 200, r.text
     assert r.json()["brand"] == "LiuGong" and r.json()["blocks"][0]["type"] == "title"
+
+
+# ── #54 (TASK-0510): история последних 30 КП ─────────────────────────────────
+
+async def _generate(client, admin, name="Экскаватор XCMG", client_name="ООО «Стройка»"):
+    payload = {"name": name, "client_name": client_name, "filename": name,
+               "blocks": [{"type": "title", "title": name}]}
+    r = await client.post("/api/proposals/generate", json=payload, headers=_auth(admin))
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+async def test_history_records_and_lists(client):
+    admin = await _register_admin(client)
+    gen = await _generate(client, admin)
+
+    lst = await client.get("/api/proposals/history", headers=_auth(admin))
+    assert lst.status_code == 200
+    rows = lst.json()
+    assert len(rows) == 1
+    assert rows[0]["file_id"] == gen["file_id"]
+    assert rows[0]["machine"] == "Экскаватор XCMG" and rows[0]["client_name"] == "ООО «Стройка»"
+
+    # повторное скачивание по сохранённому file_id
+    dl = await client.get(f"/api/files/{rows[0]['file_id']}", headers=_auth(admin))
+    assert dl.status_code == 200 and dl.content[:2] == b"PK"
+
+    # снимок контракта — основа для нового КП
+    item = await client.get(f"/api/proposals/history/{rows[0]['id']}", headers=_auth(admin))
+    assert item.status_code == 200
+    assert item.json()["payload"]["name"] == "Экскаватор XCMG"
+
+
+async def test_history_isolated_by_owner(client):
+    admin = await _register_admin(client)
+    gen = await _generate(client, admin)
+    hist = (await client.get("/api/proposals/history", headers=_auth(admin))).json()
+    item_id = hist[0]["id"]
+
+    seller = await _make_user(client, admin, "seller3", "продажи")
+    # чужая история не видна
+    assert (await client.get("/api/proposals/history", headers=_auth(seller))).json() == []
+    # чужая запись и чужой файл — 403
+    assert (await client.get(f"/api/proposals/history/{item_id}",
+                             headers=_auth(seller))).status_code == 403
+    assert (await client.get(f"/api/files/{gen['file_id']}",
+                             headers=_auth(seller))).status_code == 403
+
+
+async def test_history_retention_keeps_last_30(session):
+    """Ретенция: у пользователя остаются только 30 последних записей."""
+    from app import repositories as repo
+    u = await repo.create_user(session, "manager30", "h$1", role="продажи")
+    await session.commit()
+    for i in range(33):
+        await repo.add_proposal_history(session, user_id=u.id, file_id=None,
+                                        file_name=f"КП-{i}.pptx", machine=f"Модель {i}")
+    await session.commit()
+    rows = await repo.list_proposal_history(session, u.id, limit=100)
+    assert len(rows) == repo.PROPOSAL_HISTORY_LIMIT == 30
+    assert rows[0].file_name == "КП-32.pptx"          # новейшая первой
+    assert all("КП-2.pptx" != r.file_name for r in rows)   # самые старые вычищены
+
+
+# ── #55 (TASK-0511): отправка PPTX в Telegram ────────────────────────────────
+
+async def test_send_telegram_success(client, monkeypatch):
+    admin = await _register_admin(client)
+    gen = await _generate(client, admin)
+
+    import app.routers.proposals as pr
+    from app.config import get_settings
+    sent = {}
+
+    class FakeTx:
+        def __init__(self, token):
+            pass
+
+        async def send_file(self, chat_id, data, filename, method, field):
+            sent.update(chat_id=chat_id, name=filename, size=len(data), method=method)
+
+        async def aclose(self):
+            pass
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "telegram_bot_token", "test-token", raising=False)
+    monkeypatch.setattr(settings, "telegram_allowlist", "555:director", raising=False)
+    monkeypatch.setattr(pr, "get_settings", lambda: settings)
+    import app.telegram_bot as tb
+    monkeypatch.setattr(tb, "TelegramTransport", FakeTx)
+
+    r = await client.post("/api/proposals/send-telegram",
+                          json={"file_id": gen["file_id"]}, headers=_auth(admin))
+    assert r.status_code == 200, r.text
+    assert r.json()["sent"] is True and sent["chat_id"] == 555
+    assert sent["method"] == "sendDocument" and sent["name"].endswith(".pptx")
+
+
+async def test_send_telegram_rejects_foreign_file(client, monkeypatch):
+    admin = await _register_admin(client)
+    gen = await _generate(client, admin)
+    seller = await _make_user(client, admin, "seller4", "продажи")
+    r = await client.post("/api/proposals/send-telegram",
+                          json={"file_id": gen["file_id"]}, headers=_auth(seller))
+    assert r.status_code == 403                       # чужой файл не отправить
+
+
+async def test_send_telegram_too_large_returns_link(client, monkeypatch):
+    admin = await _register_admin(client)
+    gen = await _generate(client, admin)
+
+    import app.routers.proposals as pr
+    from app.config import get_settings
+    settings = get_settings()
+    monkeypatch.setattr(settings, "telegram_bot_token", "test-token", raising=False)
+    monkeypatch.setattr(settings, "telegram_allowlist", "555:director", raising=False)
+    monkeypatch.setattr(pr, "get_settings", lambda: settings)
+    monkeypatch.setattr(pr, "TELEGRAM_FILE_LIMIT", 10)   # искусственно крошечный лимит
+
+    r = await client.post("/api/proposals/send-telegram",
+                          json={"file_id": gen["file_id"]}, headers=_auth(admin))
+    assert r.status_code == 200
+    body = r.json()
+    assert body["sent"] is False and body["reason"] == "too_large"
+    assert body["download_url"] == f"/api/files/{gen['file_id']}"

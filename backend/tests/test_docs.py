@@ -464,3 +464,104 @@ def test_extract_text_from_docx():
     dx = docgen.create_docx("Прайс на запчасти XCMG.", "p")
     text = extract_text(dx, "p.docx")
     assert "запчасти" in text
+
+
+# ── #52 (TASK-0508): наценка в КП-презентации ────────────────────────────────
+
+def test_apply_markup_recalculates_string_price():
+    from services.proposal_pptx import apply_markup
+    out, ok = apply_markup("9 850 000 ₽ с НДС", 12)
+    assert ok is True
+    assert "11 032 000" in out and "₽ с НДС" in out      # хвост строки сохранён
+
+
+def test_apply_markup_zero_and_number():
+    from services.proposal_pptx import apply_markup
+    assert apply_markup("9 850 000 ₽", 0) == ("9 850 000 ₽", True)   # без наценки как есть
+    out, ok = apply_markup(1_000_000, 10)
+    assert ok is True and out.replace(" ", "").replace(" ", "") == "1100000"
+
+
+def test_apply_markup_unparsable_price_not_distorted():
+    """Цена строкой без числа: не искажаем, помечаем «проверить вручную»."""
+    from services.proposal_pptx import MANUAL_CHECK_NOTE, apply_markup
+    out, ok = apply_markup("по запросу", 15)
+    assert ok is False
+    assert out.startswith("по запросу") and MANUAL_CHECK_NOTE in out
+
+
+def test_proposal_pptx_uses_final_price():
+    """В PPTX уходит итоговая цена (пересчёт на бэкенде, не на клиенте)."""
+    from pptx import Presentation
+    out = docgen.create_proposal_pptx({
+        "name": "Экскаватор", "price": "10 000 000 ₽", "markup_percent": 15,
+        "blocks": [{"type": "title", "title": "Экскаватор"}]})
+    prs = Presentation(io.BytesIO(out))
+    text = " ".join(sh.text_frame.text for s in prs.slides for sh in s.shapes if sh.has_text_frame)
+    assert "11 500 000" in text and "10 000 000" not in text
+
+
+# ── #53 (TASK-0509): шаблоны КП-презентации ──────────────────────────────────
+
+def test_pptx_template_standard_unchanged():
+    """Стандартный шаблон работает как раньше (ядро #45 не задето)."""
+    from pptx import Presentation
+    out = docgen.create_proposal_pptx({
+        "name": "Экскаватор", "blocks": [{"type": "title", "title": "Экскаватор"}]})
+    assert len(Presentation(io.BytesIO(out)).slides._sldIdLst) == 2   # титул + цена
+
+
+def test_pptx_template_comparison():
+    from pptx import Presentation
+    out = docgen.create_proposal_pptx({
+        "name": "Сравнение", "template": "comparison",
+        "machines": [
+            {"name": "XCMG XE215C", "specs": {"Мощность": "118 кВт", "Масса": "21.5 т"}},
+            {"name": "LiuGong 922E", "specs": {"Мощность": "110 кВт", "Масса": "22 т"}},
+        ],
+        "blocks": [{"type": "title", "title": "Сравнение моделей"}]})
+    prs = Presentation(io.BytesIO(out))
+    assert len(prs.slides._sldIdLst) == 3          # титул + сравнение + цена
+    text = " ".join(sh.text_frame.text for s in prs.slides for sh in s.shapes if sh.has_text_frame)
+    assert "СРАВНЕНИЕ МОДЕЛЕЙ" in text
+    assert "XCMG XE215C".upper() in text and "LIUGONG 922E" in text
+    assert "118 кВт" in text and "110 кВт" in text  # значения обеих моделей
+
+
+def test_pptx_template_parts():
+    from pptx import Presentation
+    out = docgen.create_proposal_pptx({
+        "name": "Запчасти", "template": "parts",
+        "parts": [
+            {"article": "803004555", "name": "Фильтр масляный", "qty": "2",
+             "price": "2 800 ₽", "availability": "склад"},
+            {"article": "860116442", "name": "Гидронасос", "qty": "1", "price": "85 000 ₽"},
+        ],
+        "blocks": []})
+    prs = Presentation(io.BytesIO(out))
+    assert len(prs.slides._sldIdLst) == 2          # список запчастей + цена
+    text = " ".join(sh.text_frame.text for s in prs.slides for sh in s.shapes if sh.has_text_frame)
+    assert "ЗАПАСНЫЕ ЧАСТИ" in text and "803004555" in text
+    assert "Гидронасос" in text and "85 000 ₽" in text
+
+
+def test_pptx_unknown_template_rejected():
+    with pytest.raises(ValueError, match="Неизвестный шаблон"):
+        docgen.create_proposal_pptx({"name": "X", "template": "нет-такого", "blocks": []})
+
+
+async def test_pptx_unknown_template_tool_answers_clearly(monkeypatch):
+    """Через инструмент неизвестный шаблон → понятный отказ, а не падение хода."""
+    import app.orchestrator as orch
+
+    async def fake_save(self, uid, cid, name, data, kind, emit, etype):
+        raise AssertionError("файл не должен сохраняться")
+
+    monkeypatch.setattr(orch.Orchestrator, "_save_file", fake_save)
+
+    async def emit(_e):
+        pass
+    res = await orch.Orchestrator()._execute_tool(
+        "create_proposal_pptx", {"name": "X", "template": "хз", "blocks": []},
+        emit, 1, None, None)
+    assert "Неизвестный шаблон" in res and "standard" in res

@@ -240,6 +240,37 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "filename": {"type": "string", "description": "Имя файла без расширения"},
+                "template": {"type": "string", "enum": ["standard", "comparison", "parts"],
+                             "description": "Шаблон: standard — обычное КП на технику (по умолч.); "
+                                            "comparison — сравнение нескольких моделей (заполни machines); "
+                                            "parts — КП на запчасти (заполни parts)"},
+                "machines": {
+                    "type": "array",
+                    "description": "Для template=comparison: сравниваемые модели",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string", "description": "Модель, напр. «XCMG XE215C»"},
+                            "specs": {"type": "object", "description": "Параметры: {«Мощность»: «118 кВт», …}"},
+                        },
+                        "required": ["name"],
+                    },
+                },
+                "parts": {
+                    "type": "array",
+                    "description": "Для template=parts: позиции запчастей",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "article": {"type": "string", "description": "Артикул"},
+                            "name": {"type": "string", "description": "Наименование"},
+                            "qty": {"type": "string", "description": "Количество"},
+                            "price": {"type": "string", "description": "Цена за единицу"},
+                            "availability": {"type": "string", "description": "Наличие/срок"},
+                        },
+                        "required": ["name"],
+                    },
+                },
                 "name": {"type": "string", "description": "Модель техники (строка на слайдах), напр. «Экскаватор XCMG XE215C»"},
                 "brand": {"type": "string", "description": "Бренд (в шапке справа), напр. XCMG"},
                 "client_name": {"type": "string", "description": "Клиент — «Подготовлено для» на обложке"},
@@ -247,7 +278,9 @@ TOOLS = [
                 "phone": {"type": "string", "description": "Телефон менеджера"},
                 "warranty": {"type": "string", "description": "Гарантия, напр. «12 месяцев»"},
                 "availability": {"type": "string", "description": "Наличие / срок поставки"},
-                "price": {"type": "string", "description": "Стоимость (строкой, с валютой)"},
+                "price": {"type": "string", "description": "Базовая стоимость (строкой, с валютой)"},
+                "markup_percent": {"type": "number",
+                                   "description": "Наценка в процентах: цена в презентации пересчитывается автоматически (0 — без наценки)"},
                 "payment_terms": {"type": "array", "items": {"type": "string"}, "description": "Условия оплаты, по пунктам"},
                 "trusted_by": {"type": "string", "description": "Строка «Нам доверяют» (опц.; есть дефолт)"},
                 "blocks": {

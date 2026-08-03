@@ -139,6 +139,11 @@ export const api = {
   proposalExtract: (file) => uploadForm("/proposals/extract", file),
   proposalPhoto: (file) => uploadForm("/proposals/photo", file),
   proposalGenerate: (data) => req("/proposals/generate", { method: "POST", json: data }),
+  // #54 — история последних 30 КП; #55 — отправка готового PPTX в Telegram
+  proposalHistory: () => req("/proposals/history"),
+  proposalHistoryItem: (id) => req(`/proposals/history/${id}`),
+  proposalSendTelegram: (fileId) =>
+    req("/proposals/send-telegram", { method: "POST", json: { file_id: fileId } }),
 };
 
 // #4 — файлы грузим через fetch по cookie (токена в URL нет, GET → CSRF не нужен).

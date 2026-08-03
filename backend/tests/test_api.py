@@ -452,3 +452,22 @@ async def test_admin_parts_queries_and_poll(client, monkeypatch):
 
     client.cookies.clear()
     assert (await client.post("/api/admin/parts/poll")).status_code == 401
+
+
+async def test_admin_can_assign_business_roles(client):
+    """Бизнес-роли (продажи/закупки/маркетинг/…) назначаются при заведении сотрудника —
+    без этого пер-инструментный RBAC не работал (всё схлопывалось в «user»)."""
+    from agent.registry import BUSINESS_ROLES
+    admin = await _register_admin(client)
+    for i, role in enumerate(BUSINESS_ROLES):
+        r = await client.post("/api/admin/users",
+                              json={"username": f"emp{i}", "password": "pass1234",
+                                    "full_name": role, "role": role},
+                              headers=_auth(admin))
+        assert r.status_code == 200, r.text
+        assert r.json()["role"] == role
+    # несуществующая роль по-прежнему схлопывается в user
+    r = await client.post("/api/admin/users",
+                          json={"username": "hacker1", "password": "pass1234", "role": "root"},
+                          headers=_auth(admin))
+    assert r.json()["role"] == "user"

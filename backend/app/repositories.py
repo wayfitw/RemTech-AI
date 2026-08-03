@@ -22,6 +22,7 @@ from app.models import (
     Notification,
     PartListing,
     PartQuery,
+    ProposalHistory,
     Reminder,
     TenderSeen,
     TenderSubscription,
@@ -654,3 +655,42 @@ async def close_missing_part_listings(s, *, source: str, query_id: int | None,
         row.closed_at = now
     await s.flush()
     return len(rows)
+
+
+# ── История КП-презентаций (TASK-0510, #54) ───────────────────────────────────
+
+PROPOSAL_HISTORY_LIMIT = 30   # сколько последних КП храним на пользователя
+
+
+async def add_proposal_history(s, *, user_id: int, file_id: int | None, file_name: str,
+                               client_name: str = "", machine: str = "",
+                               template: str = "standard",
+                               payload: dict | None = None) -> ProposalHistory:
+    """Записывает КП в историю и применяет ретенцию: у пользователя остаются только
+    PROPOSAL_HISTORY_LIMIT последних записей, лишние удаляются (файлы в хранилище
+    не трогаем — они живут по своей политике)."""
+    row = ProposalHistory(user_id=user_id, file_id=file_id, file_name=file_name or "",
+                          client_name=(client_name or "")[:200], machine=(machine or "")[:200],
+                          template=(template or "standard")[:32], payload=payload)
+    s.add(row)
+    await s.flush()
+
+    keep = list(await s.scalars(
+        select(ProposalHistory.id).where(ProposalHistory.user_id == user_id)
+        .order_by(ProposalHistory.id.desc()).limit(PROPOSAL_HISTORY_LIMIT)))
+    if keep:
+        await s.execute(delete(ProposalHistory).where(
+            ProposalHistory.user_id == user_id, ProposalHistory.id.not_in(keep)))
+    return row
+
+
+async def list_proposal_history(s, user_id: int,
+                                limit: int = PROPOSAL_HISTORY_LIMIT) -> list[ProposalHistory]:
+    """Последние КП пользователя (только свои — изоляция по владельцу)."""
+    return list(await s.scalars(
+        select(ProposalHistory).where(ProposalHistory.user_id == user_id)
+        .order_by(ProposalHistory.id.desc()).limit(limit)))
+
+
+async def get_proposal_history(s, item_id: int) -> ProposalHistory | None:
+    return await s.get(ProposalHistory, item_id)

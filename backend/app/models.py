@@ -269,6 +269,27 @@ class ContentTopicSeen(Base):
     created_at: Mapped[dt.datetime] = _now_col()
 
 
+class ProposalHistory(Base):
+    """TASK-0510 (#54) — история КП-презентаций менеджера: последние 30 записей.
+
+    Хранит снимок контракта данных (payload) — по нему КП можно пересобрать или
+    взять за основу нового. Файл лежит в общем хранилище (uploaded_files), здесь
+    только ссылка. Ретенция: при записи всё, что старше 30 последних на
+    пользователя, удаляется (см. repositories.add_proposal_history)."""
+    __tablename__ = "proposal_history"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    file_id: Mapped[int | None] = mapped_column(
+        ForeignKey("uploaded_files.id", ondelete="SET NULL"), nullable=True)
+    file_name: Mapped[str] = mapped_column(String(255), default="")
+    client_name: Mapped[str] = mapped_column(String(200), default="")
+    machine: Mapped[str] = mapped_column(String(200), default="")   # модель техники
+    template: Mapped[str] = mapped_column(String(32), default="standard")
+    payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)   # снимок контракта
+    created_at: Mapped[dt.datetime] = _now_col()
+
+
 class PartQuery(Base):
     """TASK-0606 (#46) — что мониторим на площадках объявлений: ключевые слова или
     артикул запчасти. Настраивается без перезапуска (админка/инструмент)."""

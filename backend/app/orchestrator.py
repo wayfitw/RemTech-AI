@@ -658,7 +658,10 @@ class Orchestrator:
                     b["_image"] = img
             blocks.append(b)
         spec = {**params, "blocks": blocks}
-        data = await asyncio.to_thread(docgen.create_proposal_pptx, spec)
+        try:
+            data = await asyncio.to_thread(docgen.create_proposal_pptx, spec)
+        except ValueError as e:            # #53 — неизвестный шаблон: понятный отказ
+            return str(e)
         fname = (params.get("filename") or params.get("name") or "КП") + ".pptx"
         await self._save_file(uid, cid, fname, data, "pptx", emit, "document")
         n = len(blocks) + 1   # +1 — авто-слайд цены

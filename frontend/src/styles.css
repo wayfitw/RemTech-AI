@@ -775,3 +775,19 @@ h1, h2, h3, .brand-name { letter-spacing: -0.02em; }
 .kp-done-ico { font-size: 46px; color: var(--accent); }
 .kp-done .kp-primary { margin: 14px auto 4px; }
 @media (max-width: 640px) { .kp-grid { grid-template-columns: 1fr; } }
+
+/* #54 — история КП; #55 — отправка в Telegram; #52/#53 — подсказки мастера */
+.kp-history { margin-top: 22px; text-align: left; border-top: 1px solid var(--border); padding-top: 14px; }
+.kp-history h3 { font-size: 14px; margin: 0 0 10px; }
+.kp-history-row { display: flex; align-items: center; gap: 10px; padding: 7px 10px;
+  border: 1px solid var(--border); border-radius: 8px; margin-bottom: 6px; font-size: 13px; }
+.kp-history-main { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kp-history-date { font-size: 12px; }
+.kp-history-btn { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 15px; }
+.kp-history-btn:hover { color: var(--accent); }
+.kp-hint { font-size: 12px; margin: 8px 0 0; }
+.kp-field select { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px;
+  padding: 9px 11px; color: var(--text); font: inherit; font-size: 14px; }
+.kp-tg { display: inline-flex; align-items: center; gap: 8px; margin: 10px auto 0; }
+.kp-tg-state { font-size: 13px; color: var(--muted); margin: 8px 0 0; }
+.kp-tg-state.ok { color: var(--accent); }

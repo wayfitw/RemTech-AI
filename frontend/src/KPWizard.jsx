@@ -2,7 +2,7 @@
 //   1) загрузка документа поставщика → извлечение структуры (или пустой шаблон)
 //   2) конструктор блоков: правка полей, строки характеристик, фото, drag-and-drop
 //   3) генерация PPTX и скачивание
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, downloadFile } from "./api.js";
 import { toast } from "sonner";
 
@@ -18,6 +18,30 @@ function rowsToText(rows) {
     .map((r) => (r[1] === null ? `# ${r[0]}` : r[1] ? `${r[0]} | ${r[1]}` : r[0] || ""))
     .join("\n");
 }
+// #53 — «сравнение моделей»: строка «XCMG XE215C | Мощность=118 кВт | Масса=21.5 т»
+function textToMachines(text) {
+  return (text || "").split("\n").map((line) => {
+    const parts = line.split("|").map((s) => s.trim()).filter(Boolean);
+    if (!parts.length) return null;
+    const specs = {};
+    parts.slice(1).forEach((p) => {
+      const i = p.indexOf("=");
+      if (i > 0) specs[p.slice(0, i).trim()] = p.slice(i + 1).trim();
+    });
+    return { name: parts[0], specs };
+  }).filter(Boolean);
+}
+
+// #53 — «КП на запчасти»: строка «803004555 | Фильтр масляный | 2 | 2 800 ₽ | склад»
+function textToParts(text) {
+  return (text || "").split("\n").map((line) => {
+    const c = line.split("|").map((s) => s.trim());
+    if (!c.filter(Boolean).length) return null;
+    return { article: c[0] || "", name: c[1] || "", qty: c[2] || "",
+             price: c[3] || "", availability: c[4] || "" };
+  }).filter(Boolean);
+}
+
 function textToRows(text) {
   return (text || "").split("\n").map((line) => {
     const s = line.trim();
@@ -34,12 +58,20 @@ export default function KPWizard() {
   const [meta, setMeta] = useState({
     name: "", brand: "", client_name: "", manager: "", phone: "",
     warranty: "", availability: "", price: "", payment_terms: "",
+    markup_percent: "",          // #52 — наценка, пересчёт цены на бэкенде
+    template: "standard",        // #53 — шаблон презентации
+    machinesText: "",            // для шаблона «сравнение моделей»
+    partsText: "",               // для шаблона «КП на запчасти»
   });
   const [blocks, setBlocks] = useState([]);
   const [result, setResult] = useState(null); // {file_id, name}
+  const [history, setHistory] = useState([]); // #54 — последние 30 КП
+  const [tgState, setTgState] = useState(null); // #55 — результат отправки в Telegram
   const dragFrom = useRef(null);
 
   const setField = (k, v) => setMeta((m) => ({ ...m, [k]: v }));
+
+  useEffect(() => { loadHistory(); }, []);   // #54 — история при открытии мастера
 
   // нормализуем извлечённую/шаблонную структуру в редактируемые блоки
   function loadStructure(data) {
@@ -112,6 +144,48 @@ export default function KPWizard() {
     }
   }
 
+  // #54 — история последних 30 КП пользователя
+  async function loadHistory() {
+    try {
+      setHistory(await api.proposalHistory());
+    } catch {
+      /* история не критична для работы мастера */
+    }
+  }
+
+  async function useAsBase(id) {
+    try {
+      const { payload } = await api.proposalHistoryItem(id);
+      loadStructure(payload || {});
+      setMeta((m) => ({
+        ...m,
+        client_name: payload.client_name || "", manager: payload.manager || "",
+        phone: payload.phone || "", template: payload.template || "standard",
+        markup_percent: payload.markup_percent ?? "",
+      }));
+      toast.success("Данные прошлого КП загружены — правьте и генерируйте");
+    } catch (e) {
+      toast.error(e.message || "Не удалось загрузить КП");
+    }
+  }
+
+  // #55 — отправка готового PPTX в Telegram через платформенный бот
+  async function onSendTelegram() {
+    if (!result?.file_id) return;
+    setBusy(true);
+    try {
+      const r = await api.proposalSendTelegram(result.file_id);
+      setTgState(r);
+      if (r.sent) toast.success("Отправлено в Telegram");
+      else toast.error(r.detail || "Файл слишком большой — скачайте по ссылке");
+    } catch (e) {
+      setTgState({ sent: false, detail: e.message });
+      toast.error(e.message || "Не удалось отправить");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function onGenerate() {
     if (!meta.name.trim()) {
       toast.error("Укажите модель техники (поле «Название»)");
@@ -125,6 +199,7 @@ export default function KPWizard() {
         availability: meta.availability, price: meta.price,
         payment_terms: meta.payment_terms.split("\n").map((s) => s.trim()).filter(Boolean),
         filename: (meta.name || "КП").slice(0, 60),
+        template: meta.template || "standard",
         blocks: blocks.map((b) => {
           const out = { type: b.type };
           if (b.title) out.title = b.title;
@@ -134,9 +209,18 @@ export default function KPWizard() {
           return out;
         }),
       };
+      // #52 — наценка: пересчёт делает бэкенд, сюда кладём только процент
+      const markup = parseFloat(String(meta.markup_percent).replace(",", "."));
+      if (!Number.isNaN(markup) && markup !== 0) payload.markup_percent = markup;
+      // #53 — данные шаблонов
+      if (meta.template === "comparison") payload.machines = textToMachines(meta.machinesText);
+      if (meta.template === "parts") payload.parts = textToParts(meta.partsText);
+
       const r = await api.proposalGenerate(payload);
       setResult(r);
+      setTgState(null);
       setStep(3);
+      loadHistory();
       toast.success("КП-презентация готова");
     } catch (e) {
       toast.error(e.message || "Не удалось сгенерировать");
@@ -171,6 +255,33 @@ export default function KPWizard() {
           <button className="kp-link" onClick={startBlank} disabled={busy}>
             или начать с пустого шаблона
           </button>
+
+          {history.length > 0 && (
+            <div className="kp-history">
+              <h3>Последние КП</h3>
+              {history.map((h) => (
+                <div key={h.id} className="kp-history-row">
+                  <span className="kp-history-main">
+                    <b>{h.machine || h.name}</b>
+                    {h.client_name ? <span className="muted"> · {h.client_name}</span> : null}
+                  </span>
+                  <span className="muted kp-history-date">
+                    {(h.created_at || "").slice(0, 10)}
+                  </span>
+                  {h.file_id && (
+                    <button className="kp-history-btn" title="Скачать"
+                            onClick={() => downloadFile(h.file_id, h.name)}>
+                      <i className="ti ti-download" />
+                    </button>
+                  )}
+                  <button className="kp-history-btn" title="Взять за основу"
+                          onClick={() => useAsBase(h.id)}>
+                    <i className="ti ti-copy" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -184,12 +295,36 @@ export default function KPWizard() {
               <Field label="Клиент (кому)" v={meta.client_name} on={(v) => setField("client_name", v)} />
               <Field label="Менеджер" v={meta.manager} on={(v) => setField("manager", v)} />
               <Field label="Телефон" v={meta.phone} on={(v) => setField("phone", v)} />
-              <Field label="Цена" v={meta.price} on={(v) => setField("price", v)} />
+              <Field label="Базовая цена" v={meta.price} on={(v) => setField("price", v)} />
+              <Field label="Наценка, %" v={meta.markup_percent}
+                     on={(v) => setField("markup_percent", v)} />
               <Field label="Гарантия" v={meta.warranty} on={(v) => setField("warranty", v)} />
               <Field label="Наличие / срок" v={meta.availability} on={(v) => setField("availability", v)} />
             </div>
+            <label className="kp-field">
+              <span>Шаблон презентации</span>
+              <select value={meta.template} onChange={(e) => setField("template", e.target.value)}>
+                <option value="standard">Стандартное КП на технику</option>
+                <option value="comparison">Сравнение моделей</option>
+                <option value="parts">КП на запчасти</option>
+              </select>
+            </label>
+            {meta.template === "comparison" && (
+              <Field area label={'Модели для сравнения — строка на модель: «XCMG XE215C | Мощность=118 кВт | Масса=21.5 т»'}
+                     v={meta.machinesText} on={(v) => setField("machinesText", v)} />
+            )}
+            {meta.template === "parts" && (
+              <Field area label={'Позиции — строка на запчасть: «803004555 | Фильтр масляный | 2 | 2 800 ₽ | склад»'}
+                     v={meta.partsText} on={(v) => setField("partsText", v)} />
+            )}
             <Field label="Условия оплаты (по строке на пункт)" area
                    v={meta.payment_terms} on={(v) => setField("payment_terms", v)} />
+            {meta.markup_percent ? (
+              <p className="muted kp-hint">
+                Цена в презентации будет пересчитана с наценкой {meta.markup_percent}% —
+                расчёт выполняется на сервере.
+              </p>
+            ) : null}
           </div>
 
           <div className="kp-blocks">
@@ -257,8 +392,24 @@ export default function KPWizard() {
           <button className="kp-primary" onClick={() => downloadFile(result.file_id, result.name)}>
             <i className="ti ti-download" /> Скачать PPTX
           </button>
+          <button className="kp-secondary kp-tg" onClick={onSendTelegram} disabled={busy}>
+            <i className="ti ti-brand-telegram" /> {busy ? "Отправка…" : "Отправить в Telegram"}
+          </button>
+          {tgState && (
+            <p className={"kp-tg-state" + (tgState.sent ? " ok" : "")}>
+              {tgState.sent
+                ? "✓ Отправлено в Telegram"
+                : (tgState.detail || "Не удалось отправить")}
+              {tgState.reason === "too_large" && (
+                <button className="kp-link"
+                        onClick={() => downloadFile(result.file_id, result.name)}>
+                  скачать файл
+                </button>
+              )}
+            </p>
+          )}
           <button className="kp-link" onClick={() => setStep(2)}>← вернуться к правке</button>
-          <button className="kp-link" onClick={() => { setBlocks([]); setResult(null); setStep(1); }}>
+          <button className="kp-link" onClick={() => { setBlocks([]); setResult(null); setTgState(null); setStep(1); }}>
             создать новое КП
           </button>
         </div>

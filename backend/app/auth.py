@@ -108,7 +108,10 @@ async def admin_create_user(s, username: str, password: str, full_name: str = ""
     username = (username or "").strip()
     if err := _validate(username, password):
         return None, err
-    if role not in ("admin", "user"):
+    # Бизнес-роли (продажи/закупки/сервис/маркетинг/руководство) нужны для
+    # пер-инструментного RBAC — без них всё схлопывалось в «user».
+    from agent.registry import ALL_ROLES
+    if role not in ALL_ROLES:
         role = "user"
     if await repo.get_user_by_username(s, username):
         return None, "Такой логин уже занят"

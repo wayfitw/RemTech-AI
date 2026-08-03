@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import io
+import re
 
 from pydantic import BaseModel, ValidationError
 
@@ -20,6 +21,55 @@ from services.docx_style import COMPANY, DARK, HAIRLINE, INK, SOFT, YELLOW
 DEFAULT_TRUSTED = (
     "АО «СУЭК», АК «АЛРОСА», ПАО «Русал», АО «Полюс», ГМК «Норильский никель», "
     "АО «Евраз», ПАО «НЛМК», АО «Металлоинвест», АО «Северсталь», АО «ММК»")
+
+# TASK-0509 (#53) — шаблоны презентации: стандартный КП (как в #45), сравнение
+# нескольких моделей и КП на запчасти. Неизвестный шаблон → понятный отказ.
+TEMPLATES = ("standard", "comparison", "parts")
+
+# TASK-0508 (#52) — наценка. Цена в КП-презентации приходит СТРОКОЙ из документа
+# поставщика («9 850 000 ₽ с НДС»), поэтому пересчёт устроен так: находим число,
+# применяем процент, возвращаем строку в исходном виде (валюта и хвост сохраняются).
+# Не удалось распознать число — цену НЕ трогаем и помечаем для ручной проверки.
+_PRICE_NUM_RE = re.compile(r"\d[\d\s  ]*(?:[.,]\d{1,2})?")
+MANUAL_CHECK_NOTE = "проверить вручную"
+
+
+def _format_amount(value: float, sample: str) -> str:
+    """Форматирует число как в исходной строке: пробелы-разделители тысяч."""
+    whole = f"{round(value):,}".replace(",", " " if " " in sample else " ")
+    return whole
+
+
+def apply_markup(price, markup_percent) -> tuple[str, bool]:
+    """Пересчитывает цену с наценкой. Возвращает (строка_цены, распознано_ли_число).
+
+    price может быть числом или строкой любой формы. Наценка 0/пустая — цена как есть.
+    Число не распознано → исходная строка + пометка «проверить вручную», False.
+    """
+    try:
+        markup = float(markup_percent or 0)
+    except (TypeError, ValueError):
+        markup = 0.0
+    if price is None:
+        return "", True
+    if isinstance(price, (int, float)):
+        return _format_amount(float(price) * (1 + markup / 100), ""), True
+
+    text = str(price)
+    if not markup:
+        return text, True
+    m = _PRICE_NUM_RE.search(text)
+    if not m:
+        # Цену не искажаем: отдаём как есть с явной пометкой для менеджера.
+        return f"{text} ({MANUAL_CHECK_NOTE}: наценка {markup:g}% не применена)", False
+    raw = m.group(0)
+    normalized = re.sub(r"[\s  ]", "", raw).replace(",", ".")
+    try:
+        base = float(normalized)
+    except ValueError:
+        return f"{text} ({MANUAL_CHECK_NOTE}: наценка {markup:g}% не применена)", False
+    final = _format_amount(base * (1 + markup / 100), raw)
+    return text[:m.start()] + final + text[m.end():], True
 
 
 def create_proposal_pptx(data: dict) -> bytes:
@@ -279,9 +329,11 @@ def create_proposal_pptx(data: dict) -> bytes:
         _machine_name(s, name)
         BOX_Y, BOX_H, GAP = CON_Y, 1.30, 0.15
         BOX_W = (W - GAP * 4) / 3
+        # #52 — в PPTX уходит ИТОГОВАЯ цена (пересчёт с наценкой на бэкенде)
+        final_price, _ok = apply_markup(d.get("price"), d.get("markup_percent"))
         boxes = [("ГАРАНТИЯ", d.get("warranty") or "—"),
                  ("НАЛИЧИЕ / СРОК ПОСТАВКИ", d.get("availability") or "—"),
-                 ("СТОИМОСТЬ", d.get("price") or "—")]
+                 ("СТОИМОСТЬ", final_price or "—")]
         for i, (label, value) in enumerate(boxes):
             bx = GAP + i * (BOX_W + GAP)
             _rect(s, bx, BOX_Y, BOX_W, BOX_H, C_SOFT, line=C_BORDER, line_pt=1)
@@ -308,8 +360,90 @@ def create_proposal_pptx(data: dict) -> bytes:
         _text(s, 0.2, TY + 0.30, 9.6, TH - 0.35, trusted or DEFAULT_TRUSTED, 8, C_TRUST_TX,
               anchor=MSO_ANCHOR.TOP)
 
+    # ── шаблон «сравнение моделей» (#53) ─────────────────────────────────────
+    def _comparison(machines, brand, name):
+        """Сравнительная таблица нескольких единиц техники: строки — параметры,
+        колонки — модели. Параметры берутся объединением ключей specs (порядок
+        первой машины сохраняется)."""
+        s = _slide()
+        _header(s, brand)
+        _machine_name(s, name or "Сравнение моделей")
+        _text(s, 0.2, CON_Y, 9.6, 0.34, "СРАВНЕНИЕ МОДЕЛЕЙ", 12, C_INK, bold=True)
+
+        params: list[str] = []
+        for m in machines:
+            for k in (m.get("specs") or {}):
+                if k not in params:
+                    params.append(str(k))
+        if not params:
+            return
+        TABLE_Y = CON_Y + 0.38
+        avail_h = H - TABLE_Y - 0.08
+        head_h = 0.32
+        row_h = min(0.3, (avail_h - head_h) / max(len(params), 1))
+        params = params[: max(1, int((avail_h - head_h) / row_h))]
+        col_param = 3.0
+        col_w = (9.6 - col_param) / max(len(machines), 1)
+
+        _rect(s, 0.2, TABLE_Y, 9.6, head_h, C_DARK)
+        _text(s, 0.28, TABLE_Y, col_param - 0.08, head_h, "ПАРАМЕТР", 8, C_YELLOW, bold=True)
+        for j, m in enumerate(machines):
+            x = 0.2 + col_param + j * col_w
+            _text(s, x + 0.06, TABLE_Y, col_w - 0.12, head_h,
+                  str(m.get("name") or f"Модель {j + 1}").upper(), 8, C_YELLOW, bold=True)
+        cur_y = TABLE_Y + head_h
+        for i, param in enumerate(params):
+            _rect(s, 0.2, cur_y, 9.6, row_h, C_EVEN if i % 2 == 0 else C_ODD)
+            _text(s, 0.28, cur_y, col_param - 0.08, row_h, param, 9, C_MUTED)
+            for j, m in enumerate(machines):
+                x = 0.2 + col_param + j * col_w
+                value = str((m.get("specs") or {}).get(param, "—"))
+                _text(s, x + 0.06, cur_y, col_w - 0.12, row_h, value, 9, C_INK, bold=True)
+            cur_y += row_h
+
+    # ── шаблон «КП на запчасти» (#53) ────────────────────────────────────────
+    def _parts(items, brand, name):
+        """Список позиций запчастей: артикул, наименование, кол-во, цена, наличие."""
+        s = _slide()
+        _header(s, brand)
+        _machine_name(s, name or "Запасные части")
+        _text(s, 0.2, CON_Y, 9.6, 0.34, "ЗАПАСНЫЕ ЧАСТИ", 12, C_INK, bold=True)
+
+        headers = ("АРТИКУЛ", "НАИМЕНОВАНИЕ", "КОЛ-ВО", "ЦЕНА", "НАЛИЧИЕ")
+        widths = (1.8, 4.0, 1.0, 1.4, 1.4)
+        TABLE_Y = CON_Y + 0.38
+        avail_h = H - TABLE_Y - 0.08
+        head_h = 0.32
+        row_h = min(0.3, (avail_h - head_h) / max(len(items), 1))
+        shown = items[: max(1, int((avail_h - head_h) / row_h))]
+
+        _rect(s, 0.2, TABLE_Y, 9.6, head_h, C_DARK)
+        x = 0.2
+        for head, wdt in zip(headers, widths):
+            _text(s, x + 0.06, TABLE_Y, wdt - 0.12, head_h, head, 8, C_YELLOW, bold=True)
+            x += wdt
+        cur_y = TABLE_Y + head_h
+        for i, it in enumerate(shown):
+            _rect(s, 0.2, cur_y, 9.6, row_h, C_EVEN if i % 2 == 0 else C_ODD)
+            values = (str(it.get("article") or "—"), str(it.get("name") or ""),
+                      str(it.get("qty") or "1"), str(it.get("price") or "—"),
+                      str(it.get("availability") or "—"))
+            x = 0.2
+            for value, wdt in zip(values, widths):
+                bold = wdt in (1.4,)          # цена и наличие — акцентом
+                _text(s, x + 0.06, cur_y, wdt - 0.12, row_h, value, 9,
+                      C_INK if bold else C_MUTED, bold=bold)
+                x += wdt
+            cur_y += row_h
+
     name = data.get("name") or ""
     brand = data.get("brand") or ""
+    template = (data.get("template") or "standard").lower()
+    if template not in TEMPLATES:
+        raise ValueError(
+            f"Неизвестный шаблон КП-презентации: «{template}». "
+            f"Доступны: {', '.join(TEMPLATES)}.")
+
     builders = {
         "title": lambda b: _title(b, brand, data.get("client_name")),
         "split": lambda b: _split(b, brand, name),
@@ -321,6 +455,17 @@ def create_proposal_pptx(data: dict) -> bytes:
         fn = builders.get((block.get("type") or "").lower())
         if fn:
             fn(block)
+
+    # Слайд шаблона идёт после блоков и перед ценой (цена всегда последняя).
+    if template == "comparison":
+        machines = [m for m in (data.get("machines") or []) if isinstance(m, dict)]
+        if machines:
+            _comparison(machines, brand, name)
+    elif template == "parts":
+        items = [p for p in (data.get("parts") or []) if isinstance(p, dict)]
+        if items:
+            _parts(items, brand, name)
+
     _price(data, brand, name, data.get("manager"), data.get("phone"), data.get("trusted_by"))
 
     out = io.BytesIO()
