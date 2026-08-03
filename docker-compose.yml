@@ -90,6 +90,37 @@ services:
       - no-new-privileges:true
     restart: unless-stopped
 
+  # Telegram-бот (DevOps-регламент, раздел 7): long polling, ОДИН процесс на один
+  # токен. Стартует только с профилем telegram — осознанно, когда в .env заданы
+  # TELEGRAM_BOT_TOKEN и TELEGRAM_ALLOWLIST (без токена процесс сразу падает):
+  #   docker compose --profile telegram up -d telegram
+  # Для stage завести ОТДЕЛЬНОГО бота в @BotFather (не путать с прод-токеном).
+  telegram:
+    build:
+      context: ./backend
+    command: ["python", "-m", "app.telegram_bot"]
+    profiles: ["telegram"]
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-remtech}:${POSTGRES_PASSWORD:-remtech}@postgres:5432/${POSTGRES_DB:-remtech}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-remtech-redis}@redis:6379/0
+      OLLAMA_URL: http://ollama:11434
+      TEI_URL: ${TEI_URL:-}
+      ORCHESTRATOR_STATE_BACKEND: redis
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - filesdata:/app/data
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
   # #39 — TEI-реранкер (bge-reranker-v2-m3) на GPU. Стартует только с профилем gpu:
   #   docker compose --profile gpu up -d tei
   # затем задать окружение api/worker: TEI_URL=http://tei:80 (двухстадийный поиск БЗ).

@@ -57,6 +57,10 @@ docker compose up -d --build
 curl http://localhost/api/health      # {"status":"ok"}
 ```
 
+Telegram-бот — отдельный сервис под профилем (нужны `TELEGRAM_BOT_TOKEN` и
+`TELEGRAM_ALLOWLIST` в `.env`; для stage — отдельный бот из @BotFather, один
+процесс на один токен): `docker compose --profile telegram up -d telegram`.
+
 `postgres` инициализируется с расширением `pgvector` (см. `deploy/postgres/init`).
 Миграции Alembic применяются при старте контейнера `api` (`alembic upgrade head`).
 
