@@ -1125,4 +1125,9 @@ def create_presentation(spec: dict) -> bytes:
 # TASK-0507 (#45) — КП-презентация на технику (PPTX). Вынесена в отдельный модуль
 # (объёмная раскладка), доступна как docgen.create_proposal_pptx для симметрии с
 # create_proposal / create_proposal_pdf.
+# TASK-0904 (#48) — аналитический отчёт по рынку и конкурентам (Word + Excel).
+from services.market_report import (  # noqa: E402,F401
+    create_market_report,
+    create_market_report_xlsx,
+)
 from services.proposal_pptx import create_proposal_pptx  # noqa: E402,F401

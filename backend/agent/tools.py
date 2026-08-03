@@ -701,6 +701,59 @@ TOOLS = [
         },
     },
     {
+        "name": "analyze_market",
+        "description": (
+            "TASK-0904 — формирует АНАЛИТИЧЕСКИЙ ОТЧЁТ по рынку и конкурентам (Word и/или Excel "
+            "в фирменном стиле). Используй по запросам «проанализируй рынок», «анализ конкурентов», "
+            "«какие цены у конкурентов», «обзор рынка/тенденций».\n"
+            "ПОРЯДОК: СНАЧАЛА собери фактуру — веб-поиск и read_url (конкуренты, их позиции, цены, "
+            "тенденции); при необходимости сверься с базой знаний (search_knowledge_base). ЗАТЕМ "
+            "вызови этот инструмент с найденными данными.\n"
+            "ТОЛЬКО ПО НАЙДЕННОМУ: не додумывай цены, доли рынка и факты. Чего нет в источниках — "
+            "перечисли в gaps («не найдено: …»), а не заполняй догадками. У каждой позиции "
+            "указывай source — ссылку на источник. Доступ: маркетинг/руководство."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "Тема отчёта, напр. «Рынок экскаваторов 20 т, Красноярский край»"},
+                "summary": {"type": "string", "description": "Главный вывод 1–3 предложениями"},
+                "competitors": {
+                    "type": "array",
+                    "description": "Конкуренты/позиции рынка — только найденные в источниках",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string", "description": "Компания или позиция (модель техники)"},
+                            "position": {"type": "string", "description": "Специализация/сегмент"},
+                            "price_range": {"type": "string", "description": "Диапазон цен как в источнике"},
+                            "note": {"type": "string", "description": "Наблюдение по позиции"},
+                            "source": {"type": "string", "description": "Ссылка на источник данных"},
+                        },
+                        "required": ["name"],
+                    },
+                },
+                "trends": {"type": "array", "items": {"type": "string"}, "description": "Тенденции рынка"},
+                "observations": {"type": "array", "items": {"type": "string"}, "description": "Наблюдения/выводы"},
+                "recommendations": {"type": "array", "items": {"type": "string"}, "description": "Рекомендации для руководства"},
+                "gaps": {"type": "array", "items": {"type": "string"},
+                         "description": "Чего НЕ нашлось в источниках (обязательно, если данных не хватило)"},
+                "sources": {
+                    "type": "array",
+                    "description": "Использованные источники",
+                    "items": {
+                        "type": "object",
+                        "properties": {"title": {"type": "string"}, "url": {"type": "string"}},
+                    },
+                },
+                "format": {"type": "string", "enum": ["docx", "xlsx", "both"],
+                           "description": "Формат выгрузки: docx (по умолчанию), xlsx или both"},
+                "filename": {"type": "string", "description": "Имя файла без расширения"},
+            },
+            "required": ["title"],
+        },
+    },
+    {
         "name": "content_digest",
         "description": (
             "TASK-0905 — собирает ТЕМЫ ДЛЯ КОНТЕНТА из отслеживаемых Telegram-каналов: читает "

@@ -371,6 +371,7 @@ class Orchestrator:
             "analyze_conversation": self._t_analyze_conversation,
             "ai_news_digest": self._t_ai_news_digest,
             "content_digest": self._t_content_digest,
+            "analyze_market": self._t_analyze_market,
             "add_content_channel": self._t_add_content_channel,
             "list_content_channels": self._t_list_content_channels,
             "remove_content_channel": self._t_remove_content_channel,
@@ -876,6 +877,28 @@ class Orchestrator:
         return f"📰 {title}\n\n{body}"
 
     # ── TASK-0905 (#47): контент-дайджест по отслеживаемым ТГ-каналам ─────────
+
+    async def _t_analyze_market(self, params, emit, uid, cid, roles, sources):
+        # TASK-0904 (#48): фактуру собирает модель (веб-поиск/read_url) — здесь только
+        # оформление в фирменные .docx/.xlsx. Пробелы данных (gaps) печатаются отдельно.
+        base = params.get("filename") or params.get("title") or "Анализ_рынка"
+        fmt = (params.get("format") or "docx").lower()
+        made = []
+        if fmt in ("docx", "both"):
+            d = await asyncio.to_thread(docgen.create_market_report, params)
+            await self._save_file(uid, cid, base + ".docx", d, "docx", emit, "document")
+            made.append("Word")
+        if fmt in ("xlsx", "both"):
+            x = await asyncio.to_thread(docgen.create_market_report_xlsx, params)
+            await self._save_file(uid, cid, base + ".xlsx", x, "xlsx", emit, "document")
+            made.append("Excel")
+        n_comp = len(params.get("competitors") or [])
+        n_gaps = len(params.get("gaps") or [])
+        msg = (f"Отчёт по рынку «{base}» готов в {' и '.join(made) or 'Word'} "
+               f"({n_comp} позиций) и отправлен пользователю.")
+        if n_gaps:
+            msg += f" Отмечено пробелов данных: {n_gaps} — скажи пользователю, что их нужно уточнить."
+        return msg
 
     async def _t_content_digest(self, params, emit, uid, cid, roles, sources):
         from services import content_digest
